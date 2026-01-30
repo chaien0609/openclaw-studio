@@ -12,6 +12,7 @@ export type AgentTileNodeData = {
   models: GatewayModelChoice[];
   onResize: (size: TileSize) => void;
   onDelete: () => void;
+  onLoadHistory: () => void;
   onNameChange: (name: string) => Promise<boolean>;
   onDraftChange: (value: string) => void;
   onSend: (message: string) => void;
@@ -32,6 +33,7 @@ export const AgentTileNode = ({ data, selected }: NodeProps<AgentTileNodeType>) 
     models,
     onResize,
     onDelete,
+    onLoadHistory,
     onNameChange,
     onDraftChange,
     onSend,
@@ -51,6 +53,7 @@ export const AgentTileNode = ({ data, selected }: NodeProps<AgentTileNodeType>) 
         canSend={canSend}
         models={models}
         onDelete={onDelete}
+        onLoadHistory={onLoadHistory}
         onNameChange={onNameChange}
         onDraftChange={onDraftChange}
         onSend={onSend}

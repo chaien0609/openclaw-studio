@@ -38,6 +38,9 @@ export type AgentTile = ProjectTile & {
   runId: string | null;
   streamText: string | null;
   thinkingTrace: string | null;
+  lastActivityAt: number | null;
+  latestPreview: string | null;
+  lastUserMessage: string | null;
   draft: string;
   sessionSettingsSynced: boolean;
 };
@@ -110,6 +113,9 @@ const createRuntimeTile = (tile: ProjectTile): AgentTile => ({
   runId: null,
   streamText: null,
   thinkingTrace: null,
+  lastActivityAt: null,
+  latestPreview: null,
+  lastUserMessage: null,
   draft: "",
   sessionSettingsSynced: false,
 });

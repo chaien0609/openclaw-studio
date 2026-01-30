@@ -34,6 +34,7 @@ type AgentTileProps = {
   canSend: boolean;
   models: GatewayModelChoice[];
   onDelete: () => void;
+  onLoadHistory: () => void;
   onNameChange: (name: string) => Promise<boolean>;
   onDraftChange: (value: string) => void;
   onSend: (message: string) => void;
@@ -52,6 +53,7 @@ export const AgentTile = ({
   canSend,
   models,
   onDelete,
+  onLoadHistory,
   onNameChange,
   onDraftChange,
   onSend,
@@ -342,6 +344,8 @@ export const AgentTile = ({
       const streamText = tile.streamText?.trim();
       if (streamText) return streamText;
     }
+    const latestPreview = tile.latestPreview?.trim();
+    if (latestPreview) return latestPreview;
     const lastResult = tile.lastResult?.trim();
     if (lastResult) return lastResult;
     for (let index = tile.outputLines.length - 1; index >= 0; index -= 1) {
@@ -356,6 +360,8 @@ export const AgentTile = ({
     return "No updates yet.";
   })();
   const lastUserMessage = (() => {
+    const stored = tile.lastUserMessage?.trim();
+    if (stored) return stored;
     for (let index = tile.outputLines.length - 1; index >= 0; index -= 1) {
       const line = tile.outputLines[index];
       if (!line) continue;
@@ -1096,6 +1102,21 @@ export const AgentTile = ({
                 Last message
               </span>
               <div className="mt-1 text-xs text-slate-700">{lastUserMessage}</div>
+            </div>
+          ) : null}
+          {tile.outputLines.length === 0 && !tile.streamText ? (
+            <div className="mt-2">
+              <button
+                className="nodrag rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-white"
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onLoadHistory();
+                }}
+              >
+                Load history
+              </button>
             </div>
           ) : null}
         </div>

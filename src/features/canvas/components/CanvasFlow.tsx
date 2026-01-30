@@ -33,6 +33,7 @@ type CanvasFlowProps = {
   onMoveTile: (id: string, position: TilePosition) => void;
   onResizeTile: (id: string, size: TileSize) => void;
   onDeleteTile: (id: string) => void;
+  onLoadHistory: (id: string) => void;
   onRenameTile: (id: string, name: string) => Promise<boolean>;
   onDraftChange: (id: string, value: string) => void;
   onSend: (id: string, sessionKey: string, message: string) => void;
@@ -57,14 +58,15 @@ const CanvasFlowInner = ({
   onMoveTile,
   onResizeTile,
   onDeleteTile,
+  onLoadHistory,
   onRenameTile,
   onDraftChange,
-    onSend,
-    onModelChange,
-    onThinkingChange,
-    onAvatarShuffle,
-    onNameShuffle,
-    onUpdateTransform,
+  onSend,
+  onModelChange,
+  onThinkingChange,
+  onAvatarShuffle,
+  onNameShuffle,
+  onUpdateTransform,
 }: CanvasFlowProps) => {
   const nodeTypes = useMemo(() => ({ agentTile: AgentTileNode }), []);
   const resizeOverridesRef = useRef<Map<string, TileSize>>(new Map());
@@ -72,6 +74,7 @@ const CanvasFlowInner = ({
     onMoveTile,
     onResizeTile,
     onDeleteTile,
+    onLoadHistory,
     onRenameTile,
     onDraftChange,
     onSend,
@@ -86,6 +89,7 @@ const CanvasFlowInner = ({
       onMoveTile,
       onResizeTile,
       onDeleteTile,
+      onLoadHistory,
       onRenameTile,
       onDraftChange,
       onSend,
@@ -98,6 +102,7 @@ const CanvasFlowInner = ({
     onMoveTile,
     onResizeTile,
     onDeleteTile,
+    onLoadHistory,
     onRenameTile,
     onDraftChange,
     onSend,
@@ -146,6 +151,7 @@ const CanvasFlowInner = ({
           onResize: (size) => updateNodeSize(tile.id, size),
           onResizeEnd: (size) => commitNodeSize(tile.id, size),
           onDelete: () => handlersRef.current.onDeleteTile(tile.id),
+          onLoadHistory: () => handlersRef.current.onLoadHistory(tile.id),
           onNameChange: (name) => handlersRef.current.onRenameTile(tile.id, name),
           onDraftChange: (value) => handlersRef.current.onDraftChange(tile.id, value),
           onSend: (message) =>

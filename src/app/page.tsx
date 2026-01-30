@@ -8,6 +8,7 @@ import { MAX_TILE_HEIGHT, MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
 import { screenToWorld, worldToScreen } from "@/features/canvas/lib/transform";
 import { extractText } from "@/lib/text/extractText";
 import { extractThinking, formatThinkingMarkdown } from "@/lib/text/extractThinking";
+import { isHeartbeatPrompt, isUiMetadataPrefix, stripUiMetadata } from "@/lib/text/uiMetadata";
 import { useGatewayConnection } from "@/lib/gateway/useGatewayConnection";
 import type { EventFrame } from "@/lib/gateway/frames";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
@@ -16,57 +17,18 @@ import {
   getActiveProject,
   useAgentCanvasStore,
 } from "@/features/canvas/state/store";
+import {
+  type AgentEventPayload,
+  type ChatEventPayload,
+  getAgentSummaryPatch,
+  getChatSummaryPatch,
+} from "@/features/canvas/state/summary";
 import { createProjectDiscordChannel } from "@/lib/projects/client";
 import { createRandomAgentName, normalizeAgentName } from "@/lib/names/agentNames";
 import { buildAgentInstruction } from "@/lib/projects/message";
 import type { AgentTile, ProjectRuntime } from "@/features/canvas/state/store";
 import { logger } from "@/lib/logger";
 // (CANVAS_BASE_ZOOM import removed)
-
-type ChatEventPayload = {
-  runId: string;
-  sessionKey: string;
-  state: "delta" | "final" | "aborted" | "error";
-  message?: unknown;
-  errorMessage?: string;
-};
-
-type AgentEventPayload = {
-  runId: string;
-  seq?: number;
-  stream?: string;
-  data?: Record<string, unknown>;
-  sessionKey?: string;
-};
-
-const PROJECT_PROMPT_BLOCK_RE = /^(?:Project|Workspace) path:[\s\S]*?\n\s*\n/i;
-const PROJECT_PROMPT_INLINE_RE = /^(?:Project|Workspace) path:[\s\S]*?memory_search\.\s*/i;
-const RESET_PROMPT_RE =
-  /^A new session was started via \/new or \/reset[\s\S]*?reasoning\.\s*/i;
-const MESSAGE_ID_RE = /\s*\[message_id:[^\]]+\]\s*/gi;
-const UI_METADATA_PREFIX_RE =
-  /^(?:Project path:|Workspace path:|A new session was started via \/new or \/reset)/i;
-const HEARTBEAT_PROMPT_RE = /^Read HEARTBEAT\.md if it exists\b/i;
-const HEARTBEAT_PATH_RE = /Heartbeat file path:/i;
-
-const stripUiMetadata = (text: string) => {
-  if (!text) return text;
-  let cleaned = text.replace(RESET_PROMPT_RE, "");
-  const beforeProjectStrip = cleaned;
-  cleaned = cleaned.replace(PROJECT_PROMPT_INLINE_RE, "");
-  if (cleaned === beforeProjectStrip) {
-    cleaned = cleaned.replace(PROJECT_PROMPT_BLOCK_RE, "");
-  }
-  cleaned = cleaned.replace(MESSAGE_ID_RE, "").trim();
-  return cleaned;
-};
-
-const isHeartbeatPrompt = (text: string) => {
-  if (!text) return false;
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  return HEARTBEAT_PROMPT_RE.test(trimmed) || HEARTBEAT_PATH_RE.test(trimmed);
-};
 
 type ChatHistoryMessage = Record<string, unknown>;
 
@@ -88,10 +50,39 @@ type GatewayConfigSnapshot = {
   };
 };
 
+type SessionPreviewItem = {
+  role: "user" | "assistant" | "tool" | "system" | "other";
+  text: string;
+};
+
+type SessionsPreviewEntry = {
+  key: string;
+  status: "ok" | "empty" | "missing" | "error";
+  items: SessionPreviewItem[];
+};
+
+type SessionsPreviewResult = {
+  ts: number;
+  previews: SessionsPreviewEntry[];
+};
+
+type SessionStatusSummary = {
+  key: string;
+  updatedAt: number | null;
+};
+
+type StatusSummary = {
+  sessions?: {
+    recent?: SessionStatusSummary[];
+    byAgent?: Array<{ agentId: string; recent: SessionStatusSummary[] }>;
+  };
+};
+
 const buildHistoryLines = (messages: ChatHistoryMessage[]) => {
   const lines: string[] = [];
   let lastAssistant: string | null = null;
   let lastRole: string | null = null;
+  let lastUser: string | null = null;
   for (const message of messages) {
     const role = typeof message.role === "string" ? message.role : "other";
     const extracted = extractText(message);
@@ -105,6 +96,7 @@ const buildHistoryLines = (messages: ChatHistoryMessage[]) => {
       }
       if (text) {
         lines.push(`> ${text}`);
+        lastUser = text;
       }
       lastRole = "user";
     } else if (role === "assistant") {
@@ -123,7 +115,7 @@ const buildHistoryLines = (messages: ChatHistoryMessage[]) => {
     if (deduped[deduped.length - 1] === line) continue;
     deduped.push(line);
   }
-  return { lines: deduped, lastAssistant, lastRole };
+  return { lines: deduped, lastAssistant, lastRole, lastUser };
 };
 
 const mergeHistoryWithPending = (historyLines: string[], currentLines: string[]) => {
@@ -198,8 +190,8 @@ const AgentCanvasPage = () => {
   const [projectWarnings, setProjectWarnings] = useState<string[]>([]);
   const [openProjectWarnings, setOpenProjectWarnings] = useState<string[]>([]);
   const historyInFlightRef = useRef<Set<string>>(new Set());
-  const historyPollsRef = useRef<Map<string, number>>(new Map());
   const stateRef = useRef(state);
+  const summaryRefreshRef = useRef<number | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
@@ -423,6 +415,32 @@ const AgentCanvasPage = () => {
   }, [buildAllowedModelKeys, client, status]);
 
   useEffect(() => {
+    if (status !== "connected") return;
+    void loadSummarySnapshot();
+  }, [loadSummarySnapshot, status]);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    const unsubscribe = client.onEvent((event: EventFrame) => {
+      if (event.event !== "presence" && event.event !== "heartbeat") return;
+      if (summaryRefreshRef.current !== null) {
+        window.clearTimeout(summaryRefreshRef.current);
+      }
+      summaryRefreshRef.current = window.setTimeout(() => {
+        summaryRefreshRef.current = null;
+        void loadSummarySnapshot();
+      }, 750);
+    });
+    return () => {
+      if (summaryRefreshRef.current !== null) {
+        window.clearTimeout(summaryRefreshRef.current);
+        summaryRefreshRef.current = null;
+      }
+      unsubscribe();
+    };
+  }, [client, loadSummarySnapshot, status]);
+
+  useEffect(() => {
     const node = viewportRef.current;
     if (!node) return;
     const observer = new ResizeObserver((entries) => {
@@ -451,6 +469,14 @@ const AgentCanvasPage = () => {
     dispatch({ type: "selectTile", tileId: result.tile.id });
   }, [computeNewTilePosition, createTile, dispatch, project]);
 
+  const handleLoadHistory = useCallback(
+    async (tileId: string) => {
+      if (!project) return;
+      await loadTileHistory(project.id, tileId);
+    },
+    [loadTileHistory, project]
+  );
+
   const loadTileHistory = useCallback(
     async (projectId: string, tileId: string) => {
       const currentProject = stateRef.current.projects.find(
@@ -467,7 +493,7 @@ const AgentCanvasPage = () => {
           sessionKey,
           limit: 200,
         });
-        const { lines, lastAssistant, lastRole } = buildHistoryLines(
+        const { lines, lastAssistant, lastRole, lastUser } = buildHistoryLines(
           result.messages ?? []
         );
         if (lines.length === 0) return;
@@ -490,6 +516,8 @@ const AgentCanvasPage = () => {
         const patch: Partial<AgentTile> = {
           outputLines: mergedLines,
           lastResult: lastAssistant ?? null,
+          ...(lastAssistant ? { latestPreview: lastAssistant } : {}),
+          ...(lastUser ? { lastUserMessage: lastUser } : {}),
         };
         if (!tile.runId && tile.status === "running" && lastRole === "assistant") {
           patch.status = "idle";
@@ -513,40 +541,78 @@ const AgentCanvasPage = () => {
     [client, dispatch]
   );
 
-  const startHistoryPolling = useCallback(
-    (projectId: string, tileId: string) => {
-      const pollKey = `${projectId}:${tileId}`;
-      const existing = historyPollsRef.current.get(pollKey);
-      if (existing) {
-        window.clearTimeout(existing);
-        historyPollsRef.current.delete(pollKey);
+  const loadSummarySnapshot = useCallback(async () => {
+    const projects = stateRef.current.projects;
+    const tiles = projects.flatMap((entry) => entry.tiles);
+    const sessionKeys = Array.from(
+      new Set(
+        tiles
+          .map((tile) => tile.sessionKey)
+          .filter((key): key is string => typeof key === "string" && key.trim())
+      )
+    ).slice(0, 64);
+    if (sessionKeys.length === 0) return;
+    try {
+      const [statusSummary, previewResult] = await Promise.all([
+        client.call<StatusSummary>("status", {}),
+        client.call<SessionsPreviewResult>("sessions.preview", {
+          keys: sessionKeys,
+          limit: 8,
+          maxChars: 240,
+        }),
+      ]);
+      const previewMap = new Map<string, SessionsPreviewEntry>();
+      for (const entry of previewResult.previews ?? []) {
+        previewMap.set(entry.key, entry);
       }
-
-      let attempts = 0;
-      const maxAttempts = 40;
-      const poll = async () => {
-        historyPollsRef.current.delete(pollKey);
-        attempts += 1;
-        await loadTileHistory(projectId, tileId);
-        const currentProject = stateRef.current.projects.find(
-          (entry) => entry.id === projectId
-        );
-        const tile = currentProject?.tiles.find((entry) => entry.id === tileId);
-        if (!tile || tile.status !== "running") {
-          return;
+      const activityByKey = new Map<string, number>();
+      const addActivity = (entries?: SessionStatusSummary[]) => {
+        if (!entries) return;
+        for (const entry of entries) {
+          if (!entry?.key || typeof entry.updatedAt !== "number") continue;
+          activityByKey.set(entry.key, entry.updatedAt);
         }
-        if (attempts >= maxAttempts) {
-          return;
-        }
-        const timeoutId = window.setTimeout(poll, 1000);
-        historyPollsRef.current.set(pollKey, timeoutId);
       };
-
-      const timeoutId = window.setTimeout(poll, 1000);
-      historyPollsRef.current.set(pollKey, timeoutId);
-    },
-    [loadTileHistory]
-  );
+      addActivity(statusSummary.sessions?.recent);
+      for (const group of statusSummary.sessions?.byAgent ?? []) {
+        addActivity(group.recent);
+      }
+      for (const project of projects) {
+        for (const tile of project.tiles) {
+          const patch: Partial<AgentTile> = {};
+          const activity = activityByKey.get(tile.sessionKey);
+          if (typeof activity === "number") {
+            patch.lastActivityAt = activity;
+          }
+          const preview = previewMap.get(tile.sessionKey);
+          if (preview?.items?.length) {
+            const lastAssistant = [...preview.items]
+              .reverse()
+              .find((item) => item.role === "assistant");
+            const lastUser = [...preview.items]
+              .reverse()
+              .find((item) => item.role === "user");
+            if (lastAssistant?.text) {
+              patch.latestPreview = stripUiMetadata(lastAssistant.text);
+            }
+            if (lastUser?.text) {
+              patch.lastUserMessage = stripUiMetadata(lastUser.text);
+            }
+          }
+          if (Object.keys(patch).length > 0) {
+            dispatch({
+              type: "updateTile",
+              projectId: project.id,
+              tileId: tile.id,
+              patch,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      logger.error("Failed to load summary snapshot.", err);
+    }
+  }, [client, dispatch]);
 
   const handleSend = useCallback(
     async (tileId: string, sessionKey: string, message: string) => {
@@ -577,7 +643,15 @@ const AgentCanvasPage = () => {
         type: "updateTile",
         projectId: project.id,
         tileId,
-        patch: { status: "running", runId, streamText: "", thinkingTrace: null, draft: "" },
+        patch: {
+          status: "running",
+          runId,
+          streamText: "",
+          thinkingTrace: null,
+          draft: "",
+          lastUserMessage: trimmed,
+          lastActivityAt: Date.now(),
+        },
       });
       dispatch({
         type: "appendOutput",
@@ -612,7 +686,6 @@ const AgentCanvasPage = () => {
           deliver: false,
           idempotencyKey: runId,
         });
-        startHistoryPolling(project.id, tileId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Gateway error";
         dispatch({
@@ -629,38 +702,8 @@ const AgentCanvasPage = () => {
         });
       }
     },
-    [client, dispatch, project, startHistoryPolling]
+    [client, dispatch, project]
   );
-
-  useEffect(() => {
-    const polls = historyPollsRef.current;
-    return () => {
-      for (const timeoutId of polls.values()) {
-        window.clearTimeout(timeoutId);
-      }
-      polls.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (status !== "connected") return;
-    if (!project) return;
-    const tilesToLoad = project.tiles.filter(
-      (tile) => tile.outputLines.length === 0 && tile.sessionKey?.trim()
-    );
-    if (tilesToLoad.length === 0) return;
-    let cancelled = false;
-    const loadHistory = async () => {
-      for (const tile of tilesToLoad) {
-        if (cancelled) return;
-        await loadTileHistory(project.id, tile.id);
-      }
-    };
-    void loadHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadTileHistory, project, status]);
 
   const handleModelChange = useCallback(
     async (tileId: string, sessionKey: string, value: string | null) => {
@@ -738,6 +781,15 @@ const AgentCanvasPage = () => {
 
       const project = state.projects.find((entry) => entry.id === match.projectId);
       const tile = project?.tiles.find((entry) => entry.id === match.tileId);
+      const summaryPatch = getChatSummaryPatch(payload);
+      if (summaryPatch) {
+        dispatch({
+          type: "updateTile",
+          projectId: match.projectId,
+          tileId: match.tileId,
+          patch: summaryPatch,
+        });
+      }
       const role =
         payload.message && typeof payload.message === "object"
           ? (payload.message as Record<string, unknown>).role
@@ -749,7 +801,7 @@ const AgentCanvasPage = () => {
       const nextText = nextTextRaw ? stripUiMetadata(nextTextRaw) : null;
       const nextThinking = extractThinking(payload.message);
       if (payload.state === "delta") {
-        if (typeof nextTextRaw === "string" && UI_METADATA_PREFIX_RE.test(nextTextRaw.trim())) {
+        if (typeof nextTextRaw === "string" && isUiMetadataPrefix(nextTextRaw.trim())) {
           return;
         }
         if (nextThinking) {
@@ -849,12 +901,13 @@ const AgentCanvasPage = () => {
       if (event.event !== "agent") return;
       const payload = event.payload as AgentEventPayload | undefined;
       if (!payload?.runId) return;
+      const summaryPatch = getAgentSummaryPatch(payload);
+      if (!summaryPatch) return;
       const directMatch = payload.sessionKey
         ? findTileBySessionKey(state.projects, payload.sessionKey)
         : null;
       const match = directMatch ?? findTileByRunId(state.projects, payload.runId);
       if (!match) return;
-      if (payload.stream !== "lifecycle") return;
       const project = state.projects.find((entry) => entry.id === match.projectId);
       const tile = project?.tiles.find((entry) => entry.id === match.tileId);
       if (!tile) return;
@@ -864,7 +917,7 @@ const AgentCanvasPage = () => {
           type: "updateTile",
           projectId: match.projectId,
           tileId: match.tileId,
-          patch: { status: "running", runId: payload.runId },
+          patch: { status: "running", runId: payload.runId, lastActivityAt: summaryPatch.lastActivityAt ?? null },
         });
         return;
       }
@@ -874,7 +927,13 @@ const AgentCanvasPage = () => {
           type: "updateTile",
           projectId: match.projectId,
           tileId: match.tileId,
-          patch: { status: "idle", runId: null, streamText: null, thinkingTrace: null },
+          patch: {
+            status: "idle",
+            runId: null,
+            streamText: null,
+            thinkingTrace: null,
+            lastActivityAt: summaryPatch.lastActivityAt ?? null,
+          },
         });
         return;
       }
@@ -884,7 +943,13 @@ const AgentCanvasPage = () => {
           type: "updateTile",
           projectId: match.projectId,
           tileId: match.tileId,
-          patch: { status: "error", runId: null, streamText: null, thinkingTrace: null },
+          patch: {
+            status: "error",
+            runId: null,
+            streamText: null,
+            thinkingTrace: null,
+            lastActivityAt: summaryPatch.lastActivityAt ?? null,
+          },
         });
       }
     });
@@ -1044,6 +1109,7 @@ const AgentCanvasPage = () => {
             : null
         }
         onDeleteTile={handleTileDelete}
+        onLoadHistory={handleLoadHistory}
         onRenameTile={(id, name) => {
           if (!project) return Promise.resolve(false);
           return renameTile(project.id, id, name).then((result) => {
