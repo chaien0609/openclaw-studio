@@ -6,11 +6,11 @@ test("loads canvas empty state", async ({ page }) => {
       await route.fallback();
       return;
     }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ version: 2, activeProjectId: null, projects: [] }),
-    });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ version: 3, activeProjectId: null, projects: [] }),
+      });
   });
   await page.goto("/");
   await expect(page.getByText("Create a workspace to begin.")).toBeVisible();

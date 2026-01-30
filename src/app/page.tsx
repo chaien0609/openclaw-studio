@@ -26,6 +26,7 @@ import {
 import { createProjectDiscordChannel } from "@/lib/projects/client";
 import { createRandomAgentName, normalizeAgentName } from "@/lib/names/agentNames";
 import { buildAgentInstruction } from "@/lib/projects/message";
+import { filterArchivedItems } from "@/lib/projects/archive";
 import type { AgentTile, ProjectRuntime } from "@/features/canvas/state/store";
 import { logger } from "@/lib/logger";
 // (CANVAS_BASE_ZOOM import removed)
@@ -178,17 +179,20 @@ const AgentCanvasPage = () => {
     createTile,
     createOrOpenProject,
     deleteProject,
+    restoreProject,
     deleteTile,
+    restoreTile,
     renameTile,
     updateTile,
   } = useAgentCanvasStore();
-  const project = getActiveProject(state);
+  const activeProject = getActiveProject(state);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [showOpenProjectForm, setShowOpenProjectForm] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [projectWarnings, setProjectWarnings] = useState<string[]>([]);
   const [openProjectWarnings, setOpenProjectWarnings] = useState<string[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const stateRef = useRef(state);
   const summaryRefreshRef = useRef<number | null>(null);
@@ -198,7 +202,20 @@ const AgentCanvasPage = () => {
   const [gatewayModelsError, setGatewayModelsError] = useState<string | null>(null);
   // flowInstance removed (zoom controls live in the bottom-right ReactFlow Controls).
 
-  const tiles = useMemo(() => project?.tiles ?? [], [project?.tiles]);
+  const visibleProjects = useMemo(
+    () => filterArchivedItems(state.projects, showArchived),
+    [state.projects, showArchived]
+  );
+  const project = useMemo(() => {
+    if (activeProject && (showArchived || !activeProject.archivedAt)) {
+      return activeProject;
+    }
+    return visibleProjects[0] ?? null;
+  }, [activeProject, showArchived, visibleProjects]);
+  const tiles = useMemo(
+    () => filterArchivedItems(project?.tiles ?? [], showArchived),
+    [project?.tiles, showArchived]
+  );
   const errorMessage = state.error ?? gatewayModelsError;
 
   const resolveConfiguredModelKey = useCallback(
@@ -453,8 +470,24 @@ const AgentCanvasPage = () => {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (showArchived) return;
+    if (activeProject && activeProject.archivedAt) {
+      const fallback = state.projects.find((entry) => !entry.archivedAt) ?? null;
+      if ((fallback?.id ?? null) !== state.activeProjectId) {
+        dispatch({ type: "setActiveProject", projectId: fallback?.id ?? null });
+      }
+    }
+  }, [activeProject, dispatch, showArchived, state.activeProjectId, state.projects]);
+
+  useEffect(() => {
+    if (!state.selectedTileId) return;
+    if (tiles.some((tile) => tile.id === state.selectedTileId)) return;
+    dispatch({ type: "selectTile", tileId: null });
+  }, [dispatch, state.selectedTileId, tiles]);
+
   const handleNewAgent = useCallback(async () => {
-    if (!project) return;
+    if (!project || project.archivedAt) return;
     const name = createRandomAgentName();
     const result = await createTile(project.id, name, "coding");
     if (!result) return;
@@ -983,20 +1016,27 @@ const AgentCanvasPage = () => {
 
   const handleProjectDelete = useCallback(async () => {
     if (!project) return;
+    if (project.archivedAt) {
+      const result = await restoreProject(project.id);
+      if (result?.warnings.length) {
+        window.alert(result.warnings.join("\n"));
+      }
+      return;
+    }
     const confirmation = window.prompt(
-      `Type DELETE ${project.name} to confirm workspace deletion.`
+      `Type ARCHIVE ${project.name} to confirm workspace archive.`
     );
-    if (confirmation !== `DELETE ${project.name}`) {
+    if (confirmation !== `ARCHIVE ${project.name}`) {
       return;
     }
     const result = await deleteProject(project.id);
     if (result?.warnings.length) {
       window.alert(result.warnings.join("\n"));
     }
-  }, [deleteProject, project]);
+  }, [deleteProject, project, restoreProject]);
 
   const handleCreateDiscordChannel = useCallback(async () => {
-    if (!project) return;
+    if (!project || project.archivedAt) return;
     if (!state.selectedTileId) {
       window.alert("Select an agent tile first.");
       return;
@@ -1027,12 +1067,16 @@ const AgentCanvasPage = () => {
   const handleTileDelete = useCallback(
     async (tileId: string) => {
       if (!project) return;
-      const result = await deleteTile(project.id, tileId);
+      const tile = project.tiles.find((entry) => entry.id === tileId);
+      if (!tile) return;
+      const result = tile.archivedAt
+        ? await restoreTile(project.id, tileId)
+        : await deleteTile(project.id, tileId);
       if (result?.warnings.length) {
         window.alert(result.warnings.join("\n"));
       }
     },
-    [deleteTile, project]
+    [deleteTile, project, restoreTile]
   );
 
   const handleAvatarShuffle = useCallback(
@@ -1145,8 +1189,12 @@ const AgentCanvasPage = () => {
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col gap-4 p-6">
         <div className="pointer-events-auto mx-auto w-full max-w-6xl">
           <HeaderBar
-            projects={state.projects.map((entry) => ({ id: entry.id, name: entry.name }))}
-            activeProjectId={state.activeProjectId}
+            projects={visibleProjects.map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              archivedAt: entry.archivedAt,
+            }))}
+            activeProjectId={project?.id ?? null}
             status={status}
             onProjectChange={(projectId) =>
               dispatch({
@@ -1167,9 +1215,14 @@ const AgentCanvasPage = () => {
               setShowOpenProjectForm((prev) => !prev);
             }}
             onDeleteProject={handleProjectDelete}
+            showArchived={showArchived}
+            onToggleArchived={() => setShowArchived((prev) => !prev)}
+            activeProjectArchived={Boolean(project?.archivedAt)}
             onNewAgent={handleNewAgent}
             onCreateDiscordChannel={handleCreateDiscordChannel}
-            canCreateDiscordChannel={Boolean(project && project.tiles.length > 0)}
+            canCreateDiscordChannel={Boolean(
+              project && tiles.length > 0 && !project.archivedAt
+            )}
           />
         </div>
 

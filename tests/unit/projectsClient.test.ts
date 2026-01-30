@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createOrOpenProject, updateProjectTile } from "@/lib/projects/client";
+import { createOrOpenProject, updateProject, updateProjectTile } from "@/lib/projects/client";
 import { fetchJson } from "@/lib/http";
 
 vi.mock("@/lib/http", () => ({
@@ -10,7 +10,7 @@ vi.mock("@/lib/http", () => ({
 describe("projects client", () => {
   it("createOrOpenProject posts name payload", async () => {
     vi.mocked(fetchJson).mockResolvedValue({
-      store: { version: 2, activeProjectId: null, projects: [] },
+      store: { version: 3, activeProjectId: null, projects: [] },
       warnings: [],
     });
 
@@ -25,7 +25,7 @@ describe("projects client", () => {
 
   it("createOrOpenProject posts path payload", async () => {
     vi.mocked(fetchJson).mockResolvedValue({
-      store: { version: 2, activeProjectId: null, projects: [] },
+      store: { version: 3, activeProjectId: null, projects: [] },
       warnings: [],
     });
 
@@ -39,7 +39,10 @@ describe("projects client", () => {
   });
 
   it("updateProjectTile sends PATCH with name payload", async () => {
-    vi.mocked(fetchJson).mockResolvedValue({ store: { version: 2, activeProjectId: null, projects: [] }, warnings: [] });
+    vi.mocked(fetchJson).mockResolvedValue({
+      store: { version: 3, activeProjectId: null, projects: [] },
+      warnings: [],
+    });
 
     await updateProjectTile("project-1", "tile-1", { name: "New" });
 
@@ -51,5 +54,20 @@ describe("projects client", () => {
         body: JSON.stringify({ name: "New" }),
       }
     );
+  });
+
+  it("updateProject sends PATCH with archivedAt payload", async () => {
+    vi.mocked(fetchJson).mockResolvedValue({
+      store: { version: 3, activeProjectId: null, projects: [] },
+      warnings: [],
+    });
+
+    await updateProject("project-1", { archivedAt: null });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/projects/project-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archivedAt: null }),
+    });
   });
 });

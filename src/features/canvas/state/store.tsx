@@ -20,6 +20,7 @@ import {
   deleteProject as apiDeleteProject,
   fetchProjectsStore,
   createOrOpenProject as apiCreateOrOpenProject,
+  updateProject as apiUpdateProject,
   updateProjectTile as apiUpdateProjectTile,
   saveProjectsStore,
 } from "@/lib/projects/client";
@@ -106,6 +107,7 @@ const createRuntimeTile = (tile: ProjectTile): AgentTile => ({
   model: tile.model ?? "openai-codex/gpt-5.2-codex",
   thinkingLevel: tile.thinkingLevel ?? "low",
   avatarSeed: tile.avatarSeed ?? tile.agentId,
+  archivedAt: tile.archivedAt ?? null,
   status: "idle",
   outputLines: [],
   lastResult: null,
@@ -126,7 +128,7 @@ const hydrateProject = (project: Project): ProjectRuntime => ({
 });
 
 const dehydrateStore = (state: CanvasState): ProjectsStore => ({
-  version: 2,
+  version: 3,
   activeProjectId: state.activeProjectId,
   projects: state.projects.map((project) => ({
     id: project.id,
@@ -134,18 +136,20 @@ const dehydrateStore = (state: CanvasState): ProjectsStore => ({
     repoPath: project.repoPath,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
-      tiles: project.tiles.map((tile) => ({
-        id: tile.id,
-        name: tile.name,
-        agentId: tile.agentId,
-        role: tile.role,
-        sessionKey: tile.sessionKey,
-        workspacePath: tile.workspacePath,
-        model: tile.model ?? null,
-        thinkingLevel: tile.thinkingLevel ?? null,
-        avatarSeed: tile.avatarSeed ?? null,
-        position: tile.position,
-        size: tile.size,
+    archivedAt: project.archivedAt ?? null,
+    tiles: project.tiles.map((tile) => ({
+      id: tile.id,
+      name: tile.name,
+      agentId: tile.agentId,
+      role: tile.role,
+      sessionKey: tile.sessionKey,
+      workspacePath: tile.workspacePath,
+      archivedAt: tile.archivedAt ?? null,
+      model: tile.model ?? null,
+      thinkingLevel: tile.thinkingLevel ?? null,
+      avatarSeed: tile.avatarSeed ?? null,
+      position: tile.position,
+      size: tile.size,
     })),
   })),
 });
@@ -288,7 +292,12 @@ type StoreContextValue = {
     payload: { name: string } | { path: string }
   ) => Promise<{ warnings: string[] } | null>;
   deleteProject: (projectId: string) => Promise<{ warnings: string[] } | null>;
+  restoreProject: (projectId: string) => Promise<{ warnings: string[] } | null>;
   deleteTile: (
+    projectId: string,
+    tileId: string
+  ) => Promise<{ warnings: string[] } | null>;
+  restoreTile: (
     projectId: string,
     tileId: string
   ) => Promise<{ warnings: string[] } | null>;
@@ -376,7 +385,19 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: "loadStore", store: result.store });
       return { warnings: result.warnings };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete workspace.";
+      const message = err instanceof Error ? err.message : "Failed to archive workspace.";
+      dispatch({ type: "setError", error: message });
+      return null;
+    }
+  }, []);
+
+  const restoreProject = useCallback(async (projectId: string) => {
+    try {
+      const result = await apiUpdateProject(projectId, { archivedAt: null });
+      dispatch({ type: "loadStore", store: result.store });
+      return { warnings: result.warnings };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to restore workspace.";
       dispatch({ type: "setError", error: message });
       return null;
     }
@@ -388,7 +409,21 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: "loadStore", store: result.store });
       return { warnings: result.warnings };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to delete tile.";
+      const message = err instanceof Error ? err.message : "Failed to archive tile.";
+      dispatch({ type: "setError", error: message });
+      return null;
+    }
+  }, []);
+
+  const restoreTile = useCallback(async (projectId: string, tileId: string) => {
+    try {
+      const result = await apiUpdateProjectTile(projectId, tileId, {
+        archivedAt: null,
+      });
+      dispatch({ type: "loadStore", store: result.store });
+      return { warnings: result.warnings };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to restore tile.";
       dispatch({ type: "setError", error: message });
       return null;
     }
@@ -460,7 +495,9 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
       refreshStore,
       createOrOpenProject,
       deleteProject,
+      restoreProject,
       deleteTile,
+      restoreTile,
       renameTile,
       updateTile,
     };
@@ -470,7 +507,9 @@ export const AgentCanvasProvider = ({ children }: { children: ReactNode }) => {
     refreshStore,
     createOrOpenProject,
     deleteProject,
+    restoreProject,
     deleteTile,
+    restoreTile,
     renameTile,
     updateTile,
   ]);

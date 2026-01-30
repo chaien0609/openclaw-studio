@@ -104,6 +104,7 @@ export async function POST(
       role,
       sessionKey,
       workspacePath: worktreeDir,
+      archivedAt: null,
       model: "openai-codex/gpt-5.2-codex",
       thinkingLevel: null,
       avatarSeed: agentId,

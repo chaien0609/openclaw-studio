@@ -25,6 +25,7 @@ const makeTile = (): ProjectTile => ({
   role: "coding",
   sessionKey: "agent:agent-1:main",
   workspacePath: "/tmp/worktrees/agent-1",
+  archivedAt: null,
   model: "openai-codex/gpt-5.2-codex",
   thinkingLevel: null,
   avatarSeed: "agent-1",
@@ -38,12 +39,13 @@ const makeProject = (): Project => ({
   repoPath: "/tmp/project-1",
   createdAt: 1,
   updatedAt: 1,
+  archivedAt: null,
   tiles: [makeTile()],
 });
 
 const makeStore = (): ProjectsStore => {
   const project = makeProject();
-  return { version: 2, activeProjectId: project.id, projects: [project] };
+  return { version: 3, activeProjectId: project.id, projects: [project] };
 };
 
 describe("project API resolve helpers", () => {

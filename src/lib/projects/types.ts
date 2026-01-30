@@ -7,6 +7,7 @@ export type ProjectTile = {
   role: ProjectTileRole;
   sessionKey: string;
   workspacePath: string;
+  archivedAt: number | null;
   model?: string | null;
   thinkingLevel?: string | null;
   avatarSeed?: string | null;
@@ -20,11 +21,12 @@ export type Project = {
   repoPath: string;
   createdAt: number;
   updatedAt: number;
+  archivedAt: number | null;
   tiles: ProjectTile[];
 };
 
 export type ProjectsStore = {
-  version: 2;
+  version: 3;
   activeProjectId: string | null;
   projects: Project[];
 };
@@ -34,6 +36,15 @@ export type ProjectCreateOrOpenPayload =
   | { path: string; name?: never };
 
 export type ProjectCreateOrOpenResult = {
+  store: ProjectsStore;
+  warnings: string[];
+};
+
+export type ProjectUpdatePayload = {
+  archivedAt?: number | null;
+};
+
+export type ProjectUpdateResult = {
   store: ProjectsStore;
   warnings: string[];
 };
@@ -76,6 +87,7 @@ export type ProjectTileDeleteResult = {
 export type ProjectTileUpdatePayload = {
   name?: string;
   avatarSeed?: string | null;
+  archivedAt?: number | null;
 };
 
 export type ProjectTileUpdateResult = {

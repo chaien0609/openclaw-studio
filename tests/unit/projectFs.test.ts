@@ -103,6 +103,7 @@ describe("collectAgentIdsAndDeleteArtifacts", () => {
     role: "coding",
     sessionKey: `agent:${agentId}:main`,
     workspacePath: `/tmp/worktrees/${agentId}`,
+    archivedAt: null,
     model: "openai-codex/gpt-5.2-codex",
     thinkingLevel: null,
     avatarSeed: agentId,

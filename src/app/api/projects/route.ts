@@ -101,6 +101,7 @@ export async function POST(request: Request) {
         repoPath,
         createdAt: now,
         updatedAt: now,
+        archivedAt: null,
         tiles: [],
       };
 
@@ -174,6 +175,7 @@ export async function POST(request: Request) {
       repoPath,
       createdAt: now,
       updatedAt: now,
+      archivedAt: null,
       tiles: [],
     };
 

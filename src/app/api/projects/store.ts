@@ -6,7 +6,7 @@ import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
 import { resolveAgentWorktreeDir } from "@/lib/projects/worktrees.server";
 import { parseAgentIdFromSessionKey } from "@/lib/projects/sessionKey";
 
-const STORE_VERSION: ProjectsStore["version"] = 2;
+const STORE_VERSION: ProjectsStore["version"] = 3;
 const STORE_DIR = resolveAgentCanvasDir();
 const STORE_PATH = path.join(STORE_DIR, "projects.json");
 
@@ -28,6 +28,7 @@ export const normalizeProjectsStore = (store: ProjectsStore): ProjectsStore => {
   const projects = Array.isArray(store.projects) ? store.projects : [];
   const normalizedProjects = projects.map((project) => ({
     ...project,
+    archivedAt: typeof project.archivedAt === "number" ? project.archivedAt : null,
     tiles: Array.isArray(project.tiles)
       ? project.tiles.map((tile) => ({
           ...tile,
@@ -35,14 +36,17 @@ export const normalizeProjectsStore = (store: ProjectsStore): ProjectsStore => {
             typeof tile.workspacePath === "string" && tile.workspacePath.trim()
               ? tile.workspacePath
               : resolveAgentWorktreeDir(project.id, tile.agentId),
+          archivedAt: typeof tile.archivedAt === "number" ? tile.archivedAt : null,
         }))
       : [],
   }));
   const activeProjectId =
     typeof store.activeProjectId === "string" &&
-    normalizedProjects.some((project) => project.id === store.activeProjectId)
+    normalizedProjects.some(
+      (project) => project.id === store.activeProjectId && !project.archivedAt
+    )
       ? store.activeProjectId
-      : normalizedProjects[0]?.id ?? null;
+      : normalizedProjects.find((project) => !project.archivedAt)?.id ?? null;
   return {
     version: STORE_VERSION,
     activeProjectId,
@@ -74,6 +78,41 @@ export const removeProjectFromStore = (
     }),
     removed,
   };
+};
+
+export const updateProjectInStore = (
+  store: ProjectsStore,
+  projectId: string,
+  patch: Partial<Project>,
+  now: number = Date.now()
+): { store: ProjectsStore; updated: boolean } => {
+  let updated = false;
+  const nextStore = {
+    ...store,
+    version: STORE_VERSION,
+    projects: store.projects.map((project) => {
+      if (project.id !== projectId) return project;
+      updated = true;
+      return { ...project, ...patch, updatedAt: now };
+    }),
+  };
+  return { store: normalizeProjectsStore(nextStore), updated };
+};
+
+export const archiveProjectInStore = (
+  store: ProjectsStore,
+  projectId: string,
+  now: number = Date.now()
+): { store: ProjectsStore; updated: boolean } => {
+  return updateProjectInStore(store, projectId, { archivedAt: now }, now);
+};
+
+export const restoreProjectInStore = (
+  store: ProjectsStore,
+  projectId: string,
+  now: number = Date.now()
+): { store: ProjectsStore; updated: boolean } => {
+  return updateProjectInStore(store, projectId, { archivedAt: null }, now);
 };
 
 export const addTileToProject = (
@@ -133,11 +172,58 @@ export const removeTileFromProject = (
   return { store: nextStore, removed };
 };
 
+export const archiveTileInProject = (
+  store: ProjectsStore,
+  projectId: string,
+  tileId: string,
+  now: number = Date.now()
+): { store: ProjectsStore; updated: boolean } => {
+  let updated = false;
+  const nextStore = {
+    ...store,
+    version: STORE_VERSION,
+    projects: store.projects.map((project) => {
+      if (project.id !== projectId) return project;
+      const nextTiles = project.tiles.map((tile) => {
+        if (tile.id !== tileId) return tile;
+        updated = true;
+        return { ...tile, archivedAt: now };
+      });
+      return { ...project, tiles: nextTiles, updatedAt: now };
+    }),
+  };
+  return { store: normalizeProjectsStore(nextStore), updated };
+};
+
+export const restoreTileInProject = (
+  store: ProjectsStore,
+  projectId: string,
+  tileId: string,
+  now: number = Date.now()
+): { store: ProjectsStore; updated: boolean } => {
+  let updated = false;
+  const nextStore = {
+    ...store,
+    version: STORE_VERSION,
+    projects: store.projects.map((project) => {
+      if (project.id !== projectId) return project;
+      const nextTiles = project.tiles.map((tile) => {
+        if (tile.id !== tileId) return tile;
+        updated = true;
+        return { ...tile, archivedAt: null };
+      });
+      return { ...project, tiles: nextTiles, updatedAt: now };
+    }),
+  };
+  return { store: normalizeProjectsStore(nextStore), updated };
+};
+
 type RawTile = {
   id: string;
   name: string;
   sessionKey: string;
   workspacePath?: string;
+  archivedAt?: number | null;
   model?: string | null;
   thinkingLevel?: string | null;
   position: { x: number; y: number };
@@ -146,7 +232,7 @@ type RawTile = {
   role?: "coding" | "research" | "marketing";
 };
 
-type RawProject = Omit<Project, "tiles"> & { tiles: RawTile[] };
+type RawProject = Omit<Project, "tiles"> & { tiles: RawTile[]; archivedAt?: number | null };
 
 type RawStore = {
   version?: number;
@@ -157,6 +243,7 @@ type RawStore = {
 const migrateV1Store = (store: { activeProjectId?: string | null; projects: RawProject[] }) => {
   const projects = store.projects.map((project) => ({
     ...project,
+    archivedAt: null,
     tiles: project.tiles.map((tile) => ({
       ...tile,
       agentId: parseAgentIdFromSessionKey(
@@ -167,6 +254,7 @@ const migrateV1Store = (store: { activeProjectId?: string | null; projects: RawP
         project.id,
         parseAgentIdFromSessionKey(typeof tile.sessionKey === "string" ? tile.sessionKey : "")
       ),
+      archivedAt: null,
     })),
   }));
   return {
@@ -174,6 +262,15 @@ const migrateV1Store = (store: { activeProjectId?: string | null; projects: RawP
     activeProjectId: store.activeProjectId ?? null,
     projects,
   };
+};
+
+const migrateV2Store = (store: RawStore): ProjectsStore => {
+  const projects = Array.isArray(store.projects) ? store.projects : [];
+  return normalizeProjectsStore({
+    version: STORE_VERSION,
+    activeProjectId: store.activeProjectId ?? null,
+    projects: projects as Project[],
+  });
 };
 
 export const loadStore = (): ProjectsStore => {
@@ -192,8 +289,13 @@ export const loadStore = (): ProjectsStore => {
     if (!parsed.projects.every((project) => Array.isArray(project.tiles))) {
       throw new Error(`Workspaces store is invalid at ${STORE_PATH}.`);
     }
+    if (parsed.version === STORE_VERSION) {
+      return normalizeProjectsStore(parsed as ProjectsStore);
+    }
     if (parsed.version === 2) {
-      return parsed as ProjectsStore;
+      const migrated = migrateV2Store(parsed);
+      saveStore(migrated);
+      return migrated;
     }
     const migrated = migrateV1Store({
       activeProjectId: parsed.activeProjectId ?? null,

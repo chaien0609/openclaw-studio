@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { logger } from "@/lib/logger";
-import {
-  removeAgentEntry,
-  updateClawdbotConfig,
-} from "@/lib/clawdbot/config";
-import { collectAgentIdsAndDeleteArtifacts } from "@/lib/projects/fs.server";
+import type { ProjectUpdatePayload } from "@/lib/projects/types";
 import { resolveProjectFromParams } from "@/lib/projects/resolve.server";
-import { removeProjectFromStore, saveStore } from "../store";
+import {
+  archiveProjectInStore,
+  restoreProjectInStore,
+  saveStore,
+} from "../store";
 
 export const runtime = "nodejs";
 
@@ -20,30 +20,52 @@ export async function DELETE(
     if (!resolved.ok) {
       return resolved.response;
     }
-    const { store, projectId: resolvedProjectId, project } = resolved;
+    const { store, projectId: resolvedProjectId } = resolved;
 
-    const warnings: string[] = [];
-    const agentIds = collectAgentIdsAndDeleteArtifacts(
-      resolvedProjectId,
-      project.tiles,
-      warnings
-    );
-    const { warnings: configWarnings } = updateClawdbotConfig((config) => {
-      let changed = false;
-      for (const agentId of agentIds) {
-        if (removeAgentEntry(config, agentId)) {
-          changed = true;
-        }
-      }
-      return changed;
-    });
-    warnings.push(...configWarnings);
-
-    const { store: nextStore } = removeProjectFromStore(store, resolvedProjectId);
+    const { store: nextStore } = archiveProjectInStore(store, resolvedProjectId);
     saveStore(nextStore);
-    return NextResponse.json({ store: nextStore, warnings });
+    return NextResponse.json({ store: nextStore, warnings: [] });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete workspace.";
+    const message = err instanceof Error ? err.message : "Failed to archive workspace.";
+    logger.error(message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ projectId: string }> }
+) {
+  try {
+    const body = (await request.json()) as ProjectUpdatePayload;
+    const hasArchivedAt = Object.prototype.hasOwnProperty.call(body ?? {}, "archivedAt");
+    if (!hasArchivedAt) {
+      return NextResponse.json(
+        { error: "Workspace update requires archivedAt." },
+        { status: 400 }
+      );
+    }
+    if (body.archivedAt !== null && typeof body.archivedAt !== "number") {
+      return NextResponse.json({ error: "ArchivedAt is invalid." }, { status: 400 });
+    }
+
+    const resolved = await resolveProjectFromParams(context.params);
+    if (!resolved.ok) {
+      return resolved.response;
+    }
+    const { store, projectId: resolvedProjectId } = resolved;
+    const now = Date.now();
+    const result =
+      body.archivedAt === null
+        ? restoreProjectInStore(store, resolvedProjectId, now)
+        : archiveProjectInStore(store, resolvedProjectId, now);
+    if (!result.updated) {
+      return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+    }
+    saveStore(result.store);
+    return NextResponse.json({ store: result.store, warnings: [] });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update workspace.";
     logger.error(message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

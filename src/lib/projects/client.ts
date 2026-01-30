@@ -4,6 +4,8 @@ import type {
   ProjectDiscordChannelCreateResult,
   ProjectCreateOrOpenPayload,
   ProjectCreateOrOpenResult,
+  ProjectUpdatePayload,
+  ProjectUpdateResult,
   ProjectTileCreatePayload,
   ProjectTileCreateResult,
   ProjectTileDeleteResult,
@@ -42,6 +44,17 @@ export const saveProjectsStore = async (store: ProjectsStore): Promise<ProjectsS
 export const deleteProject = async (projectId: string): Promise<ProjectDeleteResult> => {
   return fetchJson<ProjectDeleteResult>(`/api/projects/${projectId}`, {
     method: "DELETE",
+  });
+};
+
+export const updateProject = async (
+  projectId: string,
+  payload: ProjectUpdatePayload
+): Promise<ProjectUpdateResult> => {
+  return fetchJson<ProjectUpdateResult>(`/api/projects/${projectId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 };
 

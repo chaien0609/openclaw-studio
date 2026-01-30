@@ -1,13 +1,16 @@
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 
 type HeaderBarProps = {
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; archivedAt: number | null }>;
   activeProjectId: string | null;
   status: GatewayStatus;
   onProjectChange: (projectId: string) => void;
   onCreateProject: () => void;
   onOpenProject: () => void;
   onDeleteProject: () => void;
+  showArchived: boolean;
+  onToggleArchived: () => void;
+  activeProjectArchived: boolean;
   onNewAgent: () => void;
   onCreateDiscordChannel: () => void;
   canCreateDiscordChannel: boolean;
@@ -33,6 +36,9 @@ export const HeaderBar = ({
   onCreateProject,
   onOpenProject,
   onDeleteProject,
+  showArchived,
+  onToggleArchived,
+  activeProjectArchived,
   onNewAgent,
   onCreateDiscordChannel,
   canCreateDiscordChannel,
@@ -58,6 +64,7 @@ export const HeaderBar = ({
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
+                    {project.archivedAt ? " (Archived)" : ""}
                   </option>
                 ))}
               </select>
@@ -68,6 +75,15 @@ export const HeaderBar = ({
           ) : (
             <span className="text-sm font-semibold text-slate-500">No workspaces</span>
           )}
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            <input
+              className="h-4 w-4 rounded border border-slate-300 text-[var(--accent-strong)]"
+              type="checkbox"
+              checked={showArchived}
+              onChange={onToggleArchived}
+            />
+            Show archived
+          </label>
         </div>
 
         <div className="flex flex-col items-end gap-2">
@@ -83,7 +99,7 @@ export const HeaderBar = ({
               className="rounded-full bg-[var(--accent-strong)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               type="button"
               onClick={onNewAgent}
-              disabled={!activeProjectId}
+              disabled={!activeProjectId || activeProjectArchived}
             >
               New Agent
             </button>
@@ -131,7 +147,7 @@ export const HeaderBar = ({
                   }}
                   disabled={!activeProjectId}
                 >
-                  Delete Workspace
+                  {activeProjectArchived ? "Restore Workspace" : "Archive Workspace"}
                 </button>
                 {canCreateDiscordChannel ? (
                   <button

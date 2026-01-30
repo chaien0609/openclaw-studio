@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { Project, ProjectTile, ProjectsStore } from "@/lib/projects/types";
 import {
   addTileToProject,
+  archiveProjectInStore,
+  archiveTileInProject,
   appendProjectToStore,
   normalizeProjectsStore,
   removeProjectFromStore,
   removeTileFromProject,
+  restoreProjectInStore,
+  restoreTileInProject,
   updateTileInProject,
 } from "@/app/api/projects/store";
 
@@ -16,6 +20,7 @@ const makeProject = (id: string): Project => ({
   repoPath: `/tmp/${id}`,
   createdAt: 1,
   updatedAt: 1,
+  archivedAt: null,
   tiles: [],
 });
 
@@ -26,6 +31,7 @@ const makeTile = (id: string): ProjectTile => ({
   role: "coding",
   sessionKey: `agent:agent-${id}:main`,
   workspacePath: `/tmp/worktrees/${id}`,
+  archivedAt: null,
   model: "openai-codex/gpt-5.2-codex",
   thinkingLevel: null,
   avatarSeed: `agent-${id}`,
@@ -36,12 +42,12 @@ const makeTile = (id: string): ProjectTile => ({
 describe("projectsStore", () => {
   it("normalizesEmptyProjects", () => {
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: "missing",
       projects: [],
     };
     const normalized = normalizeProjectsStore(store);
-    expect(normalized.version).toBe(2);
+    expect(normalized.version).toBe(3);
     expect(normalized.activeProjectId).toBeNull();
     expect(normalized.projects).toEqual([]);
   });
@@ -50,7 +56,7 @@ describe("projectsStore", () => {
     const projectA = makeProject("a");
     const projectB = makeProject("b");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: "missing",
       projects: [projectA, projectB],
     };
@@ -62,7 +68,7 @@ describe("projectsStore", () => {
     const projectA = makeProject("a");
     const projectB = makeProject("b");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: "b",
       projects: [projectA, projectB],
     };
@@ -72,7 +78,7 @@ describe("projectsStore", () => {
 
   it("normalizesNonArrayProjects", () => {
     const store = {
-      version: 2,
+      version: 3,
       activeProjectId: "missing",
       projects: "nope",
     } as unknown as ProjectsStore;
@@ -84,7 +90,7 @@ describe("projectsStore", () => {
 
 describe("store mutations", () => {
   it("adds a project and sets it active", () => {
-    const store: ProjectsStore = { version: 2, activeProjectId: null, projects: [] };
+    const store: ProjectsStore = { version: 3, activeProjectId: null, projects: [] };
     const project = makeProject("next");
     const nextStore = appendProjectToStore(store, project);
     expect(nextStore.activeProjectId).toBe(project.id);
@@ -95,7 +101,7 @@ describe("store mutations", () => {
     const projectA = makeProject("a");
     const projectB = makeProject("b");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: projectA.id,
       projects: [projectA, projectB],
     };
@@ -110,7 +116,7 @@ describe("store mutations", () => {
     const project = makeProject("a");
     const tile = makeTile("1");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: project.id,
       projects: [project],
     };
@@ -125,7 +131,7 @@ describe("store mutations", () => {
     const project = makeProject("a");
     const tile = makeTile("1");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: project.id,
       projects: [{ ...project, tiles: [tile] }],
     };
@@ -146,7 +152,7 @@ describe("store mutations", () => {
     const project = makeProject("a");
     const tile = makeTile("1");
     const store: ProjectsStore = {
-      version: 2,
+      version: 3,
       activeProjectId: project.id,
       projects: [{ ...project, tiles: [tile] }],
     };
@@ -155,5 +161,38 @@ describe("store mutations", () => {
     expect(result.removed).toBe(true);
     expect(updatedProject.tiles).toEqual([]);
     expect(updatedProject.updatedAt).toBe(now);
+  });
+
+  it("archives and restores a project", () => {
+    const now = 555;
+    const project = makeProject("a");
+    const store: ProjectsStore = {
+      version: 3,
+      activeProjectId: project.id,
+      projects: [project],
+    };
+    const archived = archiveProjectInStore(store, project.id, now);
+    expect(archived.updated).toBe(true);
+    expect(archived.store.projects[0].archivedAt).toBe(now);
+    const restored = restoreProjectInStore(archived.store, project.id, now + 1);
+    expect(restored.updated).toBe(true);
+    expect(restored.store.projects[0].archivedAt).toBeNull();
+  });
+
+  it("archives and restores a tile", () => {
+    const now = 777;
+    const project = makeProject("a");
+    const tile = makeTile("1");
+    const store: ProjectsStore = {
+      version: 3,
+      activeProjectId: project.id,
+      projects: [{ ...project, tiles: [tile] }],
+    };
+    const archived = archiveTileInProject(store, project.id, tile.id, now);
+    expect(archived.updated).toBe(true);
+    expect(archived.store.projects[0].tiles[0].archivedAt).toBe(now);
+    const restored = restoreTileInProject(archived.store, project.id, tile.id, now + 1);
+    expect(restored.updated).toBe(true);
+    expect(restored.store.projects[0].tiles[0].archivedAt).toBeNull();
   });
 });

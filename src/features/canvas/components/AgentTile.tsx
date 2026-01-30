@@ -703,7 +703,7 @@ export const AgentTile = ({
                       type="button"
                       onClick={onDelete}
                     >
-                      Delete agent
+                      {tile.archivedAt ? "Restore agent" : "Archive agent"}
                     </button>
                   </div>
                   <div className="flex min-h-[420px] flex-1 flex-col rounded-3xl border border-slate-200 bg-white/80 p-4">

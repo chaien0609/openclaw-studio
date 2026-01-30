@@ -11,6 +11,7 @@ const buildStore = (): ProjectsStore => {
     role: "coding",
     sessionKey: "agent:agent-1:main",
     workspacePath: "/tmp/worktrees/agent-1",
+    archivedAt: null,
     model: "openai-codex/gpt-5.2-codex",
     thinkingLevel: null,
     avatarSeed: "agent-1",
@@ -23,10 +24,11 @@ const buildStore = (): ProjectsStore => {
     repoPath: "/tmp/project-1",
     createdAt: 1,
     updatedAt: 1,
+    archivedAt: null,
     tiles: [tile],
   };
   return {
-    version: 2,
+    version: 3,
     activeProjectId: project.id,
     projects: [project],
   };

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const store = {
-  version: 2,
+  version: 3,
   activeProjectId: "project-1",
   projects: [
     {
@@ -10,6 +10,7 @@ const store = {
       repoPath: "/Users/demo",
       createdAt: 1,
       updatedAt: 1,
+      archivedAt: null,
       tiles: [
         {
           id: "tile-1",
@@ -17,6 +18,8 @@ const store = {
           agentId: "agent-1",
           role: "coding",
           sessionKey: "agent:agent-1:main",
+          workspacePath: "/Users/demo",
+          archivedAt: null,
           model: null,
           thinkingLevel: "low",
           position: { x: 400, y: 300 },
