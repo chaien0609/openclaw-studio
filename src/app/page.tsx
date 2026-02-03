@@ -37,14 +37,14 @@ import {
 } from "@/features/canvas/state/summary";
 import { fetchCronJobs } from "@/lib/projects/client";
 import { createRandomAgentName, normalizeAgentName } from "@/lib/names/agentNames";
-import type { AgentSeed, AgentTile } from "@/features/canvas/state/store";
+import type { AgentSeed, AgentTile, CanvasTransform } from "@/features/canvas/state/store";
 import type { CronJobSummary } from "@/lib/projects/types";
 import { logger } from "@/lib/logger";
 import { renameGatewayAgent } from "@/lib/gateway/agentConfig";
 import { parseAgentIdFromSessionKey, buildAgentMainSessionKey } from "@/lib/gateway/sessionKeys";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { fetchStudioSettings, updateStudioSettings } from "@/lib/studio/client";
-import { resolveGatewayLayout } from "@/lib/studio/settings";
+import { resolveGatewayLayout, type StudioAgentLayout } from "@/lib/studio/settings";
 // (CANVAS_BASE_ZOOM import removed)
 
 type ChatHistoryMessage = Record<string, unknown>;
@@ -125,6 +125,23 @@ type StatusSummary = {
 
 const SPECIAL_UPDATE_HEARTBEAT_RE = /\bheartbeat\b/i;
 const SPECIAL_UPDATE_CRON_RE = /\bcron\b/i;
+const DEFAULT_TILE_GAP = { x: 48, y: 56 };
+
+const rectsOverlap = (
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+  padding = 0
+) => {
+  const ax = a.x - padding;
+  const ay = a.y - padding;
+  const aw = a.width + padding * 2;
+  const ah = a.height + padding * 2;
+  const bx = b.x;
+  const by = b.y;
+  const bw = b.width;
+  const bh = b.height;
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+};
 
 const resolveSpecialUpdateKind = (message: string) => {
   const lowered = message.toLowerCase();
@@ -214,6 +231,60 @@ const buildHistoryLines = (messages: ChatHistoryMessage[]) => {
   return { lines: deduped, lastAssistant, lastRole, lastUser };
 };
 
+const buildMissingAgentLayouts = (params: {
+  agentIds: string[];
+  existingLayouts: Record<string, StudioAgentLayout> | null;
+  viewportSize: { width: number; height: number };
+  headerOffset: number;
+  canvas: CanvasTransform;
+}) => {
+  const layouts: Record<string, StudioAgentLayout> = {};
+  const existingLayouts = params.existingLayouts ?? {};
+  const occupiedRects = Object.values(existingLayouts).map((entry) => ({
+    x: entry.position.x,
+    y: entry.position.y,
+    width: entry.size.width,
+    height: entry.size.height,
+  }));
+  const zoom = params.canvas.zoom;
+  const tileWidth = MIN_TILE_SIZE.width;
+  const tileHeight = MIN_TILE_SIZE.height;
+  const stepX = tileWidth * zoom + DEFAULT_TILE_GAP.x;
+  const stepY = tileHeight * zoom + DEFAULT_TILE_GAP.y;
+  const safeX = 32;
+  const safeY = Math.max(32, params.headerOffset + 24);
+  const availableWidth =
+    params.viewportSize.width > 0 ? params.viewportSize.width - safeX * 2 : stepX;
+  const columns = Math.max(1, Math.floor((availableWidth + DEFAULT_TILE_GAP.x) / stepX));
+  const isOccupied = (rect: { x: number; y: number; width: number; height: number }) =>
+    occupiedRects.some((other) => rectsOverlap(rect, other, 24));
+
+  let cursor = 0;
+  for (const agentId of params.agentIds) {
+    if (existingLayouts[agentId]) continue;
+    while (true) {
+      const col = cursor % columns;
+      const row = Math.floor(cursor / columns);
+      cursor += 1;
+      const screen = {
+        x: safeX + col * stepX,
+        y: safeY + row * stepY,
+      };
+      const position = screenToWorld(params.canvas, screen);
+      const rect = { x: position.x, y: position.y, width: tileWidth, height: tileHeight };
+      if (isOccupied(rect)) continue;
+      layouts[agentId] = {
+        position,
+        size: { width: tileWidth, height: tileHeight },
+        avatarSeed: agentId,
+      };
+      occupiedRects.push(rect);
+      break;
+    }
+  }
+  return layouts;
+};
+
 const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]) => {
   let awaitingHeartbeatReply = false;
   let latestResponse: string | null = null;
@@ -298,6 +369,8 @@ const AgentCanvasPage = () => {
   const [gatewayModelsError, setGatewayModelsError] = useState<string | null>(null);
   const [inspectAgentId, setInspectAgentId] = useState<string | null>(null);
   const [headerOffset, setHeaderOffset] = useState(0);
+  const viewportSizeRef = useRef(viewportSize);
+  const headerOffsetRef = useRef(headerOffset);
   const thinkingDebugRef = useRef<Set<string>>(new Set());
   const chatRunSeenRef = useRef<Set<string>>(new Set());
   const specialUpdateRef = useRef<Map<string, string>>(new Map());
@@ -560,22 +633,6 @@ const AgentCanvasPage = () => {
         y: worldCenter.y - effectiveSize.height / 2,
       };
 
-      const rectsOverlap = (
-        a: { x: number; y: number; width: number; height: number },
-        b: { x: number; y: number; width: number; height: number },
-        padding = 0
-      ) => {
-        const ax = a.x - padding;
-        const ay = a.y - padding;
-        const aw = a.width + padding * 2;
-        const ah = a.height + padding * 2;
-        const bx = b.x;
-        const by = b.y;
-        const bw = b.width;
-        const bh = b.height;
-        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-      };
-
       const candidateFits = (candidate: { x: number; y: number }) => {
         const screen = worldToScreen(state.canvas, candidate);
         const tileWidth = effectiveSize.width * zoom;
@@ -668,8 +725,15 @@ const AgentCanvasPage = () => {
         settingsResult.settings && gatewayUrl
           ? resolveGatewayLayout(settingsResult.settings, gatewayUrl)?.agents ?? null
           : null;
+      const computedLayouts = buildMissingAgentLayouts({
+        agentIds: agentsResult.agents.map((agent) => agent.id),
+        existingLayouts: layout,
+        viewportSize: viewportSizeRef.current,
+        headerOffset: headerOffsetRef.current,
+        canvas: stateRef.current.canvas,
+      });
       const seeds: AgentSeed[] = agentsResult.agents.map((agent, index) => {
-        const layoutEntry = layout?.[agent.id];
+        const layoutEntry = layout?.[agent.id] ?? computedLayouts[agent.id];
         const position = layoutEntry?.position ?? { x: 80 + index * 36, y: 200 + index * 36 };
         const size = layoutEntry?.size ?? MIN_TILE_SIZE;
         const avatarSeed = layoutEntry?.avatarSeed ?? agent.id;
@@ -688,15 +752,7 @@ const AgentCanvasPage = () => {
       hydrateAgents(seeds);
 
       if (gatewayUrl.trim()) {
-        const missingLayouts: Record<string, { position: { x: number; y: number }; size: { width: number; height: number }; avatarSeed?: string | null }> = {};
-        for (const seed of seeds) {
-          if (layout?.[seed.agentId]) continue;
-          missingLayouts[seed.agentId] = {
-            position: seed.position,
-            size: seed.size,
-            avatarSeed: seed.avatarSeed ?? null,
-          };
-        }
+        const missingLayouts = computedLayouts;
         if (Object.keys(missingLayouts).length > 0) {
           await updateStudioSettings({
             layouts: {
@@ -725,6 +781,14 @@ const AgentCanvasPage = () => {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    viewportSizeRef.current = viewportSize;
+  }, [viewportSize]);
+
+  useEffect(() => {
+    headerOffsetRef.current = headerOffset;
+  }, [headerOffset]);
 
   useEffect(() => {
     if (status !== "connected") return;
