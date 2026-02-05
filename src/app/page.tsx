@@ -55,7 +55,12 @@ import {
 } from "@/features/agents/state/runtimeEventBridge";
 import type { AgentStoreSeed, AgentState } from "@/features/agents/state/store";
 import type { CronJobSummary } from "@/lib/cron/types";
-import { listCronJobs, removeCronJob, runCronJobNow } from "@/lib/cron/gateway";
+import {
+  listCronJobs,
+  removeCronJob,
+  removeCronJobsForAgent,
+  runCronJobNow,
+} from "@/lib/cron/gateway";
 import { filterCronJobsForAgent, resolveLatestCronJobForAgent } from "@/lib/cron/selectors";
 import { logger } from "@/lib/logger";
 import {
@@ -1002,7 +1007,7 @@ const AgentStudioPage = () => {
       const agent = agents.find((entry) => entry.agentId === agentId);
       if (!agent) return;
       const confirmed = window.confirm(
-        `Delete ${agent.name}? This removes the agent from the gateway config.`
+        `Delete ${agent.name}? This removes the agent from the gateway config and deletes its cron jobs.`
       );
       if (!confirmed) return;
       setDeleteAgentBlock({
@@ -1024,6 +1029,7 @@ const AgentStudioPage = () => {
                 phase: "deleting",
               };
             });
+            await removeCronJobsForAgent(client, agentId);
             await deleteGatewayAgent({
               client,
               agentId,
