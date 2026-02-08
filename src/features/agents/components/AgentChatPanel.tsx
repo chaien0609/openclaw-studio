@@ -15,7 +15,7 @@ import remarkGfm from "remark-gfm";
 import { Cog, Shuffle } from "lucide-react";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { isToolMarkdown, isTraceMarkdown } from "@/lib/text/message-extract";
-import { isNearBottom } from "@/lib/dom/scroll";
+import { isNearBottom } from "@/lib/dom";
 import { AgentAvatar } from "./AgentAvatar";
 import {
   buildFinalAgentChatItems,

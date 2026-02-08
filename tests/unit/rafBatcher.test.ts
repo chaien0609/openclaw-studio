@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createRafBatcher } from "@/lib/dom/rafBatcher";
+import { createRafBatcher } from "@/lib/dom";
 
 describe("createRafBatcher", () => {
   const originalRaf = globalThis.requestAnimationFrame;

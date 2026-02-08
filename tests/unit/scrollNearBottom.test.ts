@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isNearBottom } from "@/lib/dom/scroll";
+import { isNearBottom } from "@/lib/dom";
 
 describe("isNearBottom", () => {
   it("returns true when within the threshold of the bottom", () => {
@@ -21,4 +21,3 @@ describe("isNearBottom", () => {
     ).toBe(true);
   });
 });
-

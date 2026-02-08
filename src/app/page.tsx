@@ -25,7 +25,7 @@ import {
 } from "@/lib/text/message-extract";
 import { useGatewayConnection } from "@/lib/gateway/useGatewayConnection";
 import type { EventFrame } from "@/lib/gateway/frames";
-import { createRafBatcher } from "@/lib/dom/rafBatcher";
+import { createRafBatcher } from "@/lib/dom";
 import {
   buildGatewayModelChoices,
   type GatewayModelChoice,
