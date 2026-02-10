@@ -852,12 +852,16 @@ const AgentStudioPage = () => {
           sessionKey,
           limit: 200,
         });
+        const latest = stateRef.current.agents.find((entry) => entry.agentId === agentId);
+        if (!latest || latest.sessionKey.trim() !== sessionKey) {
+          return;
+        }
         const patch = buildHistorySyncPatch({
           messages: result.messages ?? [],
-          currentLines: agent.outputLines,
+          currentLines: latest.outputLines,
           loadedAt,
-          status: agent.status,
-          runId: agent.runId,
+          status: latest.status,
+          runId: latest.runId,
         });
         dispatch({
           type: "updateAgent",

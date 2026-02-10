@@ -281,6 +281,7 @@ export const getFilteredAgents = (state: AgentStoreState, filter: FocusFilter): 
       return byMostRecentAssistant(state.agents.filter((agent) => agent.status === "idle"));
     default: {
       const _exhaustive: never = filter;
+      void _exhaustive;
       return byMostRecentAssistant(state.agents);
     }
   }
