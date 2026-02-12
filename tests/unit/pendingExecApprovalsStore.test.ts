@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PendingExecApproval } from "@/features/agents/approvals/types";
 import {
+  removePendingApprovalEverywhere,
   nextPendingApprovalPruneDelayMs,
   pruneExpiredPendingApprovals,
   pruneExpiredPendingApprovalsMap,
@@ -27,6 +28,62 @@ const createApproval = (id: string, expiresAtMs: number): PendingExecApproval =>
 });
 
 describe("pending approval store", () => {
+  it("removes an approval id from scoped and unscoped collections", () => {
+    const approvalA = createApproval("a", 10_000);
+    const approvalB = createApproval("b", 20_000);
+    const approvalC = createApproval("c", 30_000);
+    const scoped = {
+      "agent-1": [approvalA, approvalB],
+      "agent-2": [approvalC],
+    };
+    const unscoped = [approvalB, approvalC];
+
+    const removed = removePendingApprovalEverywhere({
+      approvalsByAgentId: scoped,
+      unscopedApprovals: unscoped,
+      approvalId: "b",
+    });
+
+    expect(removed.approvalsByAgentId).toEqual({
+      "agent-1": [approvalA],
+      "agent-2": [approvalC],
+    });
+    expect(removed.unscopedApprovals).toEqual([approvalC]);
+  });
+
+  it("is idempotent when approval id is missing", () => {
+    const scoped = {
+      "agent-1": [createApproval("a", 10_000)],
+    };
+    const unscoped = [createApproval("b", 20_000)];
+
+    const removed = removePendingApprovalEverywhere({
+      approvalsByAgentId: scoped,
+      unscopedApprovals: unscoped,
+      approvalId: "missing",
+    });
+
+    expect(removed.approvalsByAgentId).toBe(scoped);
+    expect(removed.unscopedApprovals).toBe(unscoped);
+  });
+
+  it("drops empty scoped buckets after removal", () => {
+    const scoped = {
+      "agent-1": [createApproval("a", 10_000)],
+      "agent-2": [createApproval("b", 20_000)],
+    };
+
+    const removed = removePendingApprovalEverywhere({
+      approvalsByAgentId: scoped,
+      unscopedApprovals: [],
+      approvalId: "a",
+    });
+
+    expect(removed.approvalsByAgentId).toEqual({
+      "agent-2": [createApproval("b", 20_000)],
+    });
+  });
+
   it("upserts approvals and keeps most recent at the top", () => {
     const a = createApproval("a", 10_000);
     const b = createApproval("b", 20_000);

@@ -32,6 +32,36 @@ export const removePendingApprovalById = (
   approvalId: string
 ): PendingExecApproval[] => approvals.filter((approval) => approval.id !== approvalId);
 
+export const removePendingApprovalEverywhere = (params: {
+  approvalsByAgentId: Record<string, PendingExecApproval[]>;
+  unscopedApprovals: PendingExecApproval[];
+  approvalId: string;
+}): {
+  approvalsByAgentId: Record<string, PendingExecApproval[]>;
+  unscopedApprovals: PendingExecApproval[];
+} => {
+  const hasScoped = Object.values(params.approvalsByAgentId).some((approvals) =>
+    approvals.some((approval) => approval.id === params.approvalId)
+  );
+  const hasUnscoped = params.unscopedApprovals.some(
+    (approval) => approval.id === params.approvalId
+  );
+  if (!hasScoped && !hasUnscoped) {
+    return {
+      approvalsByAgentId: params.approvalsByAgentId,
+      unscopedApprovals: params.unscopedApprovals,
+    };
+  }
+  return {
+    approvalsByAgentId: hasScoped
+      ? removePendingApprovalByIdMap(params.approvalsByAgentId, params.approvalId)
+      : params.approvalsByAgentId,
+    unscopedApprovals: hasUnscoped
+      ? removePendingApprovalById(params.unscopedApprovals, params.approvalId)
+      : params.unscopedApprovals,
+  };
+};
+
 export const removePendingApprovalByIdMap = (
   approvalsByAgentId: Record<string, PendingExecApproval[]>,
   approvalId: string

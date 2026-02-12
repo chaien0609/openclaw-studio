@@ -112,6 +112,7 @@ import {
   nextPendingApprovalPruneDelayMs,
   pruneExpiredPendingApprovals,
   pruneExpiredPendingApprovalsMap,
+  removePendingApprovalEverywhere,
   removePendingApprovalById,
   removePendingApprovalByIdMap,
   upsertPendingApproval,
@@ -1887,6 +1888,22 @@ const AgentStudioPage = () => {
     async (approvalId: string, decision: ExecApprovalDecision) => {
       const id = approvalId.trim();
       if (!id) return;
+      const removeLocalApproval = (approvalId: string) => {
+        setPendingExecApprovalsByAgentId((current) =>
+          removePendingApprovalEverywhere({
+            approvalsByAgentId: current,
+            unscopedApprovals: [],
+            approvalId,
+          }).approvalsByAgentId
+        );
+        setUnscopedPendingExecApprovals((current) =>
+          removePendingApprovalEverywhere({
+            approvalsByAgentId: {},
+            unscopedApprovals: current,
+            approvalId,
+          }).unscopedApprovals
+        );
+      };
       const setLocalApprovalState = (resolving: boolean, error: string | null) => {
         setPendingExecApprovalsByAgentId((current) => {
           let changed = false;
@@ -1917,14 +1934,12 @@ const AgentStudioPage = () => {
       setLocalApprovalState(true, null);
       try {
         await client.call("exec.approval.resolve", { id, decision });
+        removeLocalApproval(id);
       } catch (err) {
         const unknownApprovalId =
           err instanceof GatewayResponseError && /unknown approval id/i.test(err.message);
         if (unknownApprovalId) {
-          setPendingExecApprovalsByAgentId((current) =>
-            removePendingApprovalByIdMap(current, id)
-          );
-          setUnscopedPendingExecApprovals((current) => removePendingApprovalById(current, id));
+          removeLocalApproval(id);
           return;
         }
         const message = err instanceof Error ? err.message : "Failed to resolve exec approval.";
