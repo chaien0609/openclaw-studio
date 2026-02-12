@@ -17,6 +17,10 @@ import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { isTraceMarkdown } from "@/lib/text/message-extract";
 import { isNearBottom } from "@/lib/dom";
 import { AgentAvatar } from "./AgentAvatar";
+import type {
+  ExecApprovalDecision,
+  PendingExecApproval,
+} from "@/features/agents/approvals/types";
 import {
   buildFinalAgentChatItems,
   normalizeAssistantDisplayText,
@@ -116,7 +120,81 @@ type AgentChatPanelProps = {
   onSend: (message: string) => void;
   onStopRun: () => void;
   onAvatarShuffle: () => void;
+  pendingExecApprovals?: PendingExecApproval[];
+  onResolveExecApproval?: (id: string, decision: ExecApprovalDecision) => void;
 };
+
+const formatApprovalExpiry = (timestampMs: number): string => {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestampMs));
+};
+
+const ExecApprovalCard = memo(function ExecApprovalCard({
+  approval,
+  onResolve,
+}: {
+  approval: PendingExecApproval;
+  onResolve?: (id: string, decision: ExecApprovalDecision) => void;
+}) {
+  const disabled = approval.resolving || !onResolve;
+  return (
+    <div
+      className={`w-full ${ASSISTANT_MAX_WIDTH_EXPANDED_CLASS} ${ASSISTANT_GUTTER_CLASS} self-start rounded-[8px] border border-amber-500/35 bg-amber-500/12 px-3 py-2`}
+      data-testid={`exec-approval-card-${approval.id}`}
+    >
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+        Exec approval required
+      </div>
+      <div className="mt-2 rounded-[8px] border border-border/70 bg-surface-3 px-2 py-1.5">
+        <div className="font-mono text-[10px] font-semibold text-foreground">{approval.command}</div>
+      </div>
+      <div className="mt-2 grid gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
+        <div>Host: {approval.host ?? "unknown"}</div>
+        <div>Expires: {formatApprovalExpiry(approval.expiresAtMs)}</div>
+        {approval.cwd ? <div className="sm:col-span-2">CWD: {approval.cwd}</div> : null}
+      </div>
+      {approval.error ? (
+        <div className="mt-2 rounded-[8px] border border-destructive/40 bg-destructive/12 px-2 py-1 text-[11px] text-destructive">
+          {approval.error}
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-[8px] border border-border/70 bg-surface-3 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onResolve?.(approval.id, "allow-once")}
+          disabled={disabled}
+          aria-label={`Allow once for exec approval ${approval.id}`}
+        >
+          Allow once
+        </button>
+        <button
+          type="button"
+          className="rounded-[8px] border border-border/70 bg-surface-3 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onResolve?.(approval.id, "allow-always")}
+          disabled={disabled}
+          aria-label={`Always allow for exec approval ${approval.id}`}
+        >
+          Always allow
+        </button>
+        <button
+          type="button"
+          className="rounded-[8px] border border-destructive/35 bg-destructive/12 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-destructive transition hover:bg-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={() => onResolve?.(approval.id, "deny")}
+          disabled={disabled}
+          aria-label={`Deny exec approval ${approval.id}`}
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+});
 
 const ThinkingDetailsRow = memo(function ThinkingDetailsRow({
   thinkingText,
@@ -456,6 +534,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   liveThinkingCharCount,
   runStartedAt,
   scrollToBottomNextOutputRef,
+  pendingExecApprovals,
+  onResolveExecApproval,
 }: {
   agentId: string;
   name: string;
@@ -475,6 +555,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   liveThinkingCharCount: number;
   runStartedAt: number | null;
   scrollToBottomNextOutputRef: MutableRefObject<boolean>;
+  pendingExecApprovals: PendingExecApproval[];
+  onResolveExecApproval?: (id: string, decision: ExecApprovalDecision) => void;
 }) {
   const chatRef = useRef<HTMLDivElement | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
@@ -561,6 +643,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   }, []);
 
   const showLiveAssistantCard = Boolean(liveThinkingText || liveAssistantText || showTypingIndicator);
+  const hasApprovals = pendingExecApprovals.length > 0;
+  const hasTranscriptContent = chatItems.length > 0 || hasApprovals;
 
   useEffect(() => {
     if (status !== "running" || typeof runStartedAt !== "number" || !showLiveAssistantCard) {
@@ -609,10 +693,17 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
               </button>
             </div>
           ) : null}
-          {chatItems.length === 0 ? (
+          {!hasTranscriptContent ? (
             <EmptyStatePanel title="No messages yet." compact className="p-3 text-xs" />
           ) : (
             <>
+              {pendingExecApprovals.map((approval) => (
+                <ExecApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  onResolve={onResolveExecApproval}
+                />
+              ))}
               <AgentChatFinalItems
                 agentId={agentId}
                 name={name}
@@ -741,6 +832,8 @@ export const AgentChatPanel = ({
   onSend,
   onStopRun,
   onAvatarShuffle,
+  pendingExecApprovals = [],
+  onResolveExecApproval,
 }: AgentChatPanelProps) => {
   const [draftValue, setDraftValue] = useState(agent.draft);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1026,6 +1119,8 @@ export const AgentChatPanel = ({
           liveThinkingCharCount={agent.thinkingTrace?.length ?? 0}
           runStartedAt={agent.runStartedAt}
           scrollToBottomNextOutputRef={scrollToBottomNextOutputRef}
+          pendingExecApprovals={pendingExecApprovals}
+          onResolveExecApproval={onResolveExecApproval}
         />
 
         <div className="mt-3 border-t border-border/60 pt-3">

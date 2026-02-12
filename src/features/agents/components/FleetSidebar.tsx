@@ -118,6 +118,11 @@ export const FleetSidebar = ({
                       >
                         {statusLabel[agent.status]}
                       </span>
+                      {agent.awaitingUserInput ? (
+                        <span className="rounded border border-amber-500/35 bg-amber-500/12 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+                          Needs approval
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </button>

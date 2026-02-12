@@ -92,4 +92,19 @@ describe("FleetSidebar new agent action", () => {
 
     expect(screen.getByTestId("fleet-new-agent-button")).toBeDisabled();
   });
+
+  it("shows needs approval badge for awaiting agents", () => {
+    render(
+      createElement(FleetSidebar, {
+        agents: [{ ...createAgent(), awaitingUserInput: true }],
+        selectedAgentId: "agent-1",
+        filter: "all",
+        onFilterChange: vi.fn(),
+        onSelectAgent: vi.fn(),
+        onCreateAgent: vi.fn(),
+      })
+    );
+
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+  });
 });
