@@ -29,6 +29,12 @@ export type HistorySyncCommand =
   | { kind: "logError"; message: string; error: unknown }
   | { kind: "noop"; reason: string };
 
+type HistorySyncDispatchAction = {
+  type: "updateAgent";
+  agentId: string;
+  patch: Partial<AgentState>;
+};
+
 type RunHistorySyncOperationParams = {
   client: GatewayClientLike;
   agentId: string;
@@ -40,6 +46,33 @@ type RunHistorySyncOperationParams = {
   defaultLimit: number;
   maxLimit: number;
   transcriptV2Enabled: boolean;
+};
+
+export const executeHistorySyncCommands = (params: {
+  commands: HistorySyncCommand[];
+  dispatch: (action: HistorySyncDispatchAction) => void;
+  logMetric: (metric: string, meta?: unknown) => void;
+  isDisconnectLikeError: (error: unknown) => boolean;
+  logError: (message: string, error: unknown) => void;
+}) => {
+  for (const command of params.commands) {
+    if (command.kind === "dispatchUpdateAgent") {
+      params.dispatch({
+        type: "updateAgent",
+        agentId: command.agentId,
+        patch: command.patch,
+      });
+      continue;
+    }
+    if (command.kind === "logMetric") {
+      params.logMetric(command.metric, command.meta);
+      continue;
+    }
+    if (command.kind === "logError") {
+      if (params.isDisconnectLikeError(command.error)) continue;
+      params.logError(command.message, command.error);
+    }
+  }
 };
 
 const areStringArraysEqual = (left: string[], right: string[]): boolean => {

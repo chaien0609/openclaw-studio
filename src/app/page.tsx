@@ -33,8 +33,6 @@ import {
   useAgentStore,
 } from "@/features/agents/state/store";
 import {
-  buildHistoryLines,
-  buildHistorySyncPatch,
   buildSummarySnapshotPatches,
   type SummaryPreviewSnapshot,
   type SummaryStatusSnapshot,
@@ -133,12 +131,7 @@ import {
 } from "@/features/agents/approvals/pendingStore";
 import {
   TRANSCRIPT_V2_ENABLED,
-  areTranscriptEntriesEqual,
-  buildOutputLinesFromTranscriptEntries,
-  buildTranscriptEntriesFromLines,
   logTranscriptDebugMetric,
-  mergeTranscriptEntriesWithHistory,
-  type TranscriptEntry,
 } from "@/features/agents/state/transcript";
 import {
   buildLatestUpdatePatch,
@@ -152,10 +145,9 @@ import {
   resolveSummarySnapshotIntent,
 } from "@/features/agents/operations/fleetLifecycleWorkflow";
 import {
-  buildHistoryMetadataPatch,
-  resolveHistoryRequestIntent,
-  resolveHistoryResponseDisposition,
-} from "@/features/agents/operations/historyLifecycleWorkflow";
+  executeHistorySyncCommands,
+  runHistorySyncOperation,
+} from "@/features/agents/operations/historySyncOperation";
 import {
   buildMutationSideEffectCommands,
   buildQueuedMutationBlock,
@@ -271,27 +263,6 @@ const resolveNextNewAgentName = (agents: AgentState[]) => {
     return candidate;
   }
   throw new Error("Unable to allocate a unique agent name.");
-};
-
-const areStringArraysEqual = (left: string[], right: string[]): boolean => {
-  if (left.length !== right.length) return false;
-  for (let i = 0; i < left.length; i += 1) {
-    if (left[i] !== right[i]) return false;
-  }
-  return true;
-};
-
-const ensureTranscriptEntriesForAgent = (agent: AgentState): TranscriptEntry[] => {
-  if (Array.isArray(agent.transcriptEntries)) {
-    return agent.transcriptEntries;
-  }
-  return buildTranscriptEntriesFromLines({
-    lines: agent.outputLines,
-    sessionKey: agent.sessionKey,
-    source: "legacy",
-    startSequence: 0,
-    confirmed: true,
-  });
 };
 
 const AgentStudioPage = () => {
@@ -1191,161 +1162,28 @@ const AgentStudioPage = () => {
 
   const loadAgentHistory = useCallback(
     async (agentId: string, options?: { limit?: number }) => {
-      const agent = stateRef.current.agents.find((entry) => entry.agentId === agentId);
       const historyRequestId = randomUUID();
       const loadedAt = Date.now();
-      const requestIntent = resolveHistoryRequestIntent({
-        agent: agent ?? null,
+      const commands = await runHistorySyncOperation({
+        client,
+        agentId,
         requestedLimit: options?.limit,
-        maxLimit: MAX_CHAT_HISTORY_LIMIT,
-        defaultLimit: DEFAULT_CHAT_HISTORY_LIMIT,
+        getAgent: (targetAgentId) =>
+          stateRef.current.agents.find((entry) => entry.agentId === targetAgentId) ?? null,
         inFlightSessionKeys: historyInFlightRef.current,
         requestId: historyRequestId,
         loadedAt,
+        defaultLimit: DEFAULT_CHAT_HISTORY_LIMIT,
+        maxLimit: MAX_CHAT_HISTORY_LIMIT,
+        transcriptV2Enabled: TRANSCRIPT_V2_ENABLED,
       });
-      if (requestIntent.kind === "skip") return;
-
-      historyInFlightRef.current.add(requestIntent.sessionKey);
-      dispatch({
-        type: "updateAgent",
-        agentId,
-        patch: {
-          lastHistoryRequestRevision: requestIntent.requestRevision,
-        },
+      executeHistorySyncCommands({
+        commands,
+        dispatch,
+        logMetric: (metric, meta) => logTranscriptDebugMetric(metric, meta),
+        isDisconnectLikeError: isGatewayDisconnectLikeError,
+        logError: (message) => console.error(message),
       });
-      try {
-        const result = await client.call<ChatHistoryResult>("chat.history", {
-          sessionKey: requestIntent.sessionKey,
-          limit: requestIntent.limit,
-        });
-        const latest = stateRef.current.agents.find((entry) => entry.agentId === agentId);
-        const responseDisposition = resolveHistoryResponseDisposition({
-          latestAgent: latest ?? null,
-          expectedSessionKey: requestIntent.sessionKey,
-          requestEpoch: requestIntent.requestEpoch,
-          requestRevision: requestIntent.requestRevision,
-        });
-        const historyMessages = result.messages ?? [];
-        const metadataPatch: Partial<AgentState> = buildHistoryMetadataPatch({
-          loadedAt: requestIntent.loadedAt,
-          fetchedCount: historyMessages.length,
-          limit: requestIntent.limit,
-          requestId: requestIntent.requestId,
-        });
-        if (responseDisposition.kind === "drop") {
-          const reason = responseDisposition.reason.replace(/-/g, "_");
-          const baseMeta = {
-            reason,
-            agentId,
-            requestId: requestIntent.requestId,
-          };
-          if (responseDisposition.reason === "transcript-revision-changed") {
-            const latestRevision = latest?.transcriptRevision ?? latest?.outputLines.length;
-            logTranscriptDebugMetric("history_response_dropped_stale", {
-              ...baseMeta,
-              requestRevision: requestIntent.requestRevision,
-              latestRevision,
-            });
-            dispatch({
-              type: "updateAgent",
-              agentId,
-              patch: metadataPatch,
-            });
-            return;
-          }
-          logTranscriptDebugMetric("history_response_dropped_stale", baseMeta);
-          return;
-        }
-        if (responseDisposition.kind === "metadata-only") {
-          logTranscriptDebugMetric("history_apply_skipped_running", {
-            agentId,
-            requestId: requestIntent.requestId,
-            runId: latest?.runId ?? null,
-          });
-          dispatch({
-            type: "updateAgent",
-            agentId,
-            patch: metadataPatch,
-          });
-          return;
-        }
-        if (!latest) {
-          return;
-        }
-
-        if (TRANSCRIPT_V2_ENABLED) {
-          const existingEntries = ensureTranscriptEntriesForAgent(latest);
-          const history = buildHistoryLines(historyMessages);
-          const rawHistoryEntries = buildTranscriptEntriesFromLines({
-            lines: history.lines,
-            sessionKey: requestIntent.sessionKey,
-            source: "history",
-            startSequence: latest.transcriptSequenceCounter ?? existingEntries.length,
-            confirmed: true,
-          });
-          const historyEntries = rawHistoryEntries.map((entry) => ({
-            ...entry,
-            entryId: `history:${requestIntent.sessionKey}:${entry.kind}:${entry.role}:${entry.timestampMs ?? "none"}:${entry.fingerprint}`,
-          }));
-          const merged = mergeTranscriptEntriesWithHistory({
-            existingEntries,
-            historyEntries,
-          });
-          if (merged.conflictCount > 0) {
-            logTranscriptDebugMetric("transcript_merge_conflicts", {
-              agentId,
-              requestId: requestIntent.requestId,
-              conflictCount: merged.conflictCount,
-            });
-          }
-          const mergedLines = buildOutputLinesFromTranscriptEntries(merged.entries);
-          const transcriptChanged = !areTranscriptEntriesEqual(existingEntries, merged.entries);
-          const linesChanged = !areStringArraysEqual(latest.outputLines, mergedLines);
-          dispatch({
-            type: "updateAgent",
-            agentId,
-            patch: {
-              ...metadataPatch,
-              ...(transcriptChanged || linesChanged
-                ? {
-                    transcriptEntries: merged.entries,
-                    outputLines: mergedLines,
-                  }
-                : {}),
-              ...(history.lastAssistant ? { lastResult: history.lastAssistant } : {}),
-              ...(history.lastAssistant ? { latestPreview: history.lastAssistant } : {}),
-              ...(typeof history.lastAssistantAt === "number"
-                ? { lastAssistantMessageAt: history.lastAssistantAt }
-                : {}),
-              ...(history.lastUser ? { lastUserMessage: history.lastUser } : {}),
-            },
-          });
-          return;
-        }
-
-        const patch = buildHistorySyncPatch({
-          messages: historyMessages,
-          currentLines: latest.outputLines,
-          loadedAt: requestIntent.loadedAt,
-          status: latest.status,
-          runId: latest.runId,
-        });
-        dispatch({
-          type: "updateAgent",
-          agentId,
-          patch: {
-            ...patch,
-            ...metadataPatch,
-          },
-        });
-      } catch (err) {
-        if (!isGatewayDisconnectLikeError(err)) {
-          const msg = err instanceof Error ? err.message : "Failed to load chat history.";
-          console.error(msg);
-        }
-      } finally {
-        historyInFlightRef.current.delete(requestIntent.sessionKey);
-      }
     },
     [client, dispatch]
   );
