@@ -746,11 +746,16 @@ export const AgentSettingsPanel = ({
                             {skill.source}
                           </span>
                           <span
-                            className={`rounded px-1.5 py-0.5 font-mono text-[9px] ${
+                            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
                               skill.eligible
-                                ? "bg-emerald-500/15 text-emerald-400"
-                                : "bg-amber-500/15 text-amber-300"
+                                ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-300"
+                                : "border-amber-900"
                             }`}
+                            style={
+                              skill.eligible
+                                ? undefined
+                                : { backgroundColor: "#7c2d12", color: "#ffffff" }
+                            }
                           >
                             {skill.eligible ? "eligible" : "blocked"}
                           </span>
