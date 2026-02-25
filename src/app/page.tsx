@@ -1246,35 +1246,35 @@ const AgentStudioPage = () => {
   if (status === "disconnected" && !agentsLoadedOnce && didAttemptGatewayConnect) {
     return (
       <div className="relative min-h-screen w-screen overflow-hidden bg-background">
-        <div className="relative z-10 flex h-screen flex-col gap-4 px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6">
-          <div className="w-full">
-            <HeaderBar
+        <div className="relative z-10 flex h-screen flex-col">
+          <HeaderBar
+            status={status}
+            onConnectionSettings={() => setShowConnectionPanel(true)}
+          />
+          <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 pb-3 pt-3 sm:px-4 sm:pb-4 sm:pt-4 md:px-6 md:pb-6 md:pt-4">
+            {settingsRouteActive ? (
+              <div className="w-full">
+                <button
+                  type="button"
+                  className="ui-btn-secondary px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
+                  onClick={handleBackToChat}
+                >
+                  Back to chat
+                </button>
+              </div>
+            ) : null}
+            <GatewayConnectScreen
+              gatewayUrl={gatewayUrl}
+              token={token}
+              localGatewayDefaults={localGatewayDefaults}
               status={status}
-              onConnectionSettings={() => setShowConnectionPanel(true)}
+              error={gatewayError}
+              onGatewayUrlChange={setGatewayUrl}
+              onTokenChange={setToken}
+              onUseLocalDefaults={useLocalGatewayDefaults}
+              onConnect={() => void connect()}
             />
           </div>
-          {settingsRouteActive ? (
-            <div className="w-full">
-              <button
-                type="button"
-                className="ui-btn-secondary px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
-                onClick={handleBackToChat}
-              >
-                Back to chat
-              </button>
-            </div>
-          ) : null}
-          <GatewayConnectScreen
-            gatewayUrl={gatewayUrl}
-            token={token}
-            localGatewayDefaults={localGatewayDefaults}
-            status={status}
-            error={gatewayError}
-            onGatewayUrlChange={setGatewayUrl}
-            onTokenChange={setToken}
-            onUseLocalDefaults={useLocalGatewayDefaults}
-            onConnect={() => void connect()}
-          />
         </div>
       </div>
     );
@@ -1304,281 +1304,285 @@ const AgentStudioPage = () => {
           </div>
         </div>
       ) : null}
-      <div className="relative z-10 flex h-screen flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-5">
-        <div className="w-full">
-          <HeaderBar
-            status={status}
-            onConnectionSettings={() => setShowConnectionPanel(true)}
-          />
-        </div>
-
-        {connectionPanelVisible ? (
-          <div className="pointer-events-none fixed inset-x-0 top-20 z-[140] flex justify-center px-3 sm:px-4 md:px-5">
-            <div className="glass-panel pointer-events-auto w-full max-w-4xl !bg-card px-4 py-4 sm:px-6 sm:py-6">
-              <ConnectionPanel
-                gatewayUrl={gatewayUrl}
-                token={token}
-                status={status}
-                error={gatewayError}
-                onGatewayUrlChange={setGatewayUrl}
-                onTokenChange={setToken}
-                onConnect={() => void connect()}
-                onDisconnect={disconnect}
-                onClose={() => setShowConnectionPanel(false)}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {errorMessage ? (
-          <div className="w-full">
-            <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">
-              {errorMessage}
-            </div>
-          </div>
-        ) : null}
-        {configMutationStatusLine ? (
-          <div className="w-full">
-            <div className="ui-card px-4 py-2 font-mono text-[11px] tracking-[0.07em] text-muted-foreground">
-              {configMutationStatusLine}
-            </div>
-          </div>
-        ) : null}
-
-        {settingsRouteActive ? (
-          <div
-            className="ui-panel ui-depth-workspace flex min-h-0 flex-1 overflow-hidden"
-            data-testid="agent-settings-route-panel"
-          >
-            <aside className="w-[240px] shrink-0 border-r border-border/60">
-              <div className="border-b border-border/60 px-4 py-3">
-                <button
-                  type="button"
-                  className="ui-btn-secondary w-full px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
-                  onClick={handleBackToChat}
-                >
-                  Back to chat
-                </button>
+      <div className="relative z-10 flex h-screen flex-col">
+        <HeaderBar
+          status={status}
+          onConnectionSettings={() => setShowConnectionPanel(true)}
+        />
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-3 md:px-5 md:pb-5 md:pt-3">
+          {connectionPanelVisible ? (
+            <div className="pointer-events-none fixed inset-x-0 top-12 z-[140] flex justify-center px-3 sm:px-4 md:px-5">
+              <div className="glass-panel pointer-events-auto w-full max-w-4xl !bg-card px-4 py-4 sm:px-6 sm:py-6">
+                <ConnectionPanel
+                  gatewayUrl={gatewayUrl}
+                  token={token}
+                  status={status}
+                  error={gatewayError}
+                  onGatewayUrlChange={setGatewayUrl}
+                  onTokenChange={setToken}
+                  onConnect={() => void connect()}
+                  onDisconnect={disconnect}
+                  onClose={() => setShowConnectionPanel(false)}
+                />
               </div>
-              <nav className="py-3">
-                {(
-                  [
-                    { id: "personality", label: "Behavior" },
-                    { id: "capabilities", label: "Capabilities" },
-                    { id: "automations", label: "Automations" },
-                    { id: "advanced", label: "Advanced" },
-                  ] as const
-                ).map((entry) => {
-                  const active = activeSettingsSidebarItem === entry.id;
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className={`relative w-full px-5 py-3 text-left text-sm transition ${
-                        active
-                          ? "bg-surface-2/55 font-medium text-foreground"
-                          : "font-normal text-muted-foreground hover:bg-surface-2/35 hover:text-foreground"
-                      }`}
-                      onClick={() => {
-                        setSettingsSidebarItem(entry.id);
-                        handleSettingsRouteTabChange(entry.id);
-                      }}
-                    >
-                      {active ? (
-                        <span className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary" aria-hidden="true" />
-                      ) : null}
-                      {entry.label}
-                    </button>
-                  );
-                })}
-              </nav>
-            </aside>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="flex items-start justify-between border-b border-border/60 px-6 py-4">
-                <div>
-                  <div className="text-lg font-semibold text-foreground">
-                    {inspectSidebarAgent?.name ?? settingsRouteAgentId ?? "Agent settings"}
-                  </div>
-                  <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                    Model: {settingsHeaderModel}{" "}
-                    <span className="mx-2 text-border">|</span>
-                    Thinking: {settingsHeaderThinking}
-                  </div>
-                </div>
-                <div className="rounded-md border border-border/70 bg-surface-1 px-3 py-1 font-mono text-[11px] text-muted-foreground">
-                  [{personalityHasUnsavedChanges ? "Unsaved" : "Saved ✓"}]
-                </div>
+            </div>
+          ) : null}
+
+          {errorMessage ? (
+            <div className="w-full">
+              <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">
+                {errorMessage}
               </div>
-              <div className="min-h-0 flex-1 overflow-hidden">
-                {inspectSidebarAgent ? (
-                  effectiveSettingsTab === "personality" ? (
-                    <AgentBrainPanel
-                      client={client}
-                      agents={agents}
-                      selectedAgentId={inspectSidebarAgent.agentId}
-                      onUnsavedChangesChange={setPersonalityHasUnsavedChanges}
-                    />
-                  ) : (
-                    <div className="h-full overflow-y-auto px-6 py-6">
-                      <div className="mx-auto w-full max-w-[920px]">
-                        <AgentSettingsPanel
-                          key={`${inspectSidebarAgent.agentId}:${effectiveSettingsTab}`}
-                          mode={
-                            effectiveSettingsTab === "automations"
-                              ? "automations"
-                              : effectiveSettingsTab === "advanced"
-                                ? "advanced"
-                                : "capabilities"
-                          }
-                          showHeader={false}
-                          agent={inspectSidebarAgent}
-                          onClose={handleBackToChat}
-                          permissionsDraft={settingsAgentPermissionsDraft ?? undefined}
-                          onUpdateAgentPermissions={(draft) =>
-                            settingsMutationController.handleUpdateAgentPermissions(
-                              inspectSidebarAgent.agentId,
-                              draft
-                            )
-                          }
-                          onDelete={() => settingsMutationController.handleDeleteAgent(inspectSidebarAgent.agentId)}
-                          canDelete={inspectSidebarAgent.agentId !== RESERVED_MAIN_AGENT_ID}
-                          onToolCallingToggle={(enabled) =>
-                            handleToolCallingToggle(inspectSidebarAgent.agentId, enabled)
-                          }
-                          onThinkingTracesToggle={(enabled) =>
-                            handleThinkingTracesToggle(inspectSidebarAgent.agentId, enabled)
-                          }
-                          cronJobs={settingsMutationController.settingsCronJobs}
-                          cronLoading={settingsMutationController.settingsCronLoading}
-                          cronError={settingsMutationController.settingsCronError}
-                          cronCreateBusy={settingsMutationController.cronCreateBusy}
-                          cronRunBusyJobId={settingsMutationController.cronRunBusyJobId}
-                          cronDeleteBusyJobId={settingsMutationController.cronDeleteBusyJobId}
-                          onCreateCronJob={(draft) =>
-                            settingsMutationController.handleCreateCronJob(inspectSidebarAgent.agentId, draft)
-                          }
-                          onRunCronJob={(jobId) =>
-                            settingsMutationController.handleRunCronJob(inspectSidebarAgent.agentId, jobId)
-                          }
-                          onDeleteCronJob={(jobId) =>
-                            settingsMutationController.handleDeleteCronJob(inspectSidebarAgent.agentId, jobId)
-                          }
-                          controlUiUrl={controlUiUrl}
-                        />
-                      </div>
+            </div>
+          ) : null}
+          {configMutationStatusLine ? (
+            <div className="w-full">
+              <div className="ui-card px-4 py-2 font-mono text-[11px] tracking-[0.07em] text-muted-foreground">
+                {configMutationStatusLine}
+              </div>
+            </div>
+          ) : null}
+
+          {settingsRouteActive ? (
+            <div
+              className="ui-panel ui-depth-workspace flex min-h-0 flex-1 overflow-hidden"
+              data-testid="agent-settings-route-panel"
+            >
+              <aside className="w-[240px] shrink-0 border-r border-border/60">
+                <div className="border-b border-border/60 px-4 py-3">
+                  <button
+                    type="button"
+                    className="ui-btn-secondary w-full px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
+                    onClick={handleBackToChat}
+                  >
+                    Back to chat
+                  </button>
+                </div>
+                <nav className="py-3">
+                  {(
+                    [
+                      { id: "personality", label: "Behavior" },
+                      { id: "capabilities", label: "Capabilities" },
+                      { id: "automations", label: "Automations" },
+                      { id: "advanced", label: "Advanced" },
+                    ] as const
+                  ).map((entry) => {
+                    const active = activeSettingsSidebarItem === entry.id;
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={`relative w-full px-5 py-3 text-left text-sm transition ${
+                          active
+                            ? "bg-surface-2/55 font-medium text-foreground"
+                            : "font-normal text-muted-foreground hover:bg-surface-2/35 hover:text-foreground"
+                        }`}
+                        onClick={() => {
+                          setSettingsSidebarItem(entry.id);
+                          handleSettingsRouteTabChange(entry.id);
+                        }}
+                      >
+                        {active ? (
+                          <span
+                            className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-primary"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {entry.label}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </aside>
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex items-start justify-between border-b border-border/60 px-6 py-4">
+                  <div>
+                    <div className="text-lg font-semibold text-foreground">
+                      {inspectSidebarAgent?.name ?? settingsRouteAgentId ?? "Agent settings"}
                     </div>
-                  )
+                    <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                      Model: {settingsHeaderModel}{" "}
+                      <span className="mx-2 text-border">|</span>
+                      Thinking: {settingsHeaderThinking}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border/70 bg-surface-1 px-3 py-1 font-mono text-[11px] text-muted-foreground">
+                    [{personalityHasUnsavedChanges ? "Unsaved" : "Saved ✓"}]
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {inspectSidebarAgent ? (
+                    effectiveSettingsTab === "personality" ? (
+                      <AgentBrainPanel
+                        client={client}
+                        agents={agents}
+                        selectedAgentId={inspectSidebarAgent.agentId}
+                        onUnsavedChangesChange={setPersonalityHasUnsavedChanges}
+                      />
+                    ) : (
+                      <div className="h-full overflow-y-auto px-6 py-6">
+                        <div className="mx-auto w-full max-w-[920px]">
+                          <AgentSettingsPanel
+                            key={`${inspectSidebarAgent.agentId}:${effectiveSettingsTab}`}
+                            mode={
+                              effectiveSettingsTab === "automations"
+                                ? "automations"
+                                : effectiveSettingsTab === "advanced"
+                                  ? "advanced"
+                                  : "capabilities"
+                            }
+                            showHeader={false}
+                            agent={inspectSidebarAgent}
+                            onClose={handleBackToChat}
+                            permissionsDraft={settingsAgentPermissionsDraft ?? undefined}
+                            onUpdateAgentPermissions={(draft) =>
+                              settingsMutationController.handleUpdateAgentPermissions(
+                                inspectSidebarAgent.agentId,
+                                draft
+                              )
+                            }
+                            onDelete={() =>
+                              settingsMutationController.handleDeleteAgent(inspectSidebarAgent.agentId)
+                            }
+                            canDelete={inspectSidebarAgent.agentId !== RESERVED_MAIN_AGENT_ID}
+                            onToolCallingToggle={(enabled) =>
+                              handleToolCallingToggle(inspectSidebarAgent.agentId, enabled)
+                            }
+                            onThinkingTracesToggle={(enabled) =>
+                              handleThinkingTracesToggle(inspectSidebarAgent.agentId, enabled)
+                            }
+                            cronJobs={settingsMutationController.settingsCronJobs}
+                            cronLoading={settingsMutationController.settingsCronLoading}
+                            cronError={settingsMutationController.settingsCronError}
+                            cronCreateBusy={settingsMutationController.cronCreateBusy}
+                            cronRunBusyJobId={settingsMutationController.cronRunBusyJobId}
+                            cronDeleteBusyJobId={settingsMutationController.cronDeleteBusyJobId}
+                            onCreateCronJob={(draft) =>
+                              settingsMutationController.handleCreateCronJob(inspectSidebarAgent.agentId, draft)
+                            }
+                            onRunCronJob={(jobId) =>
+                              settingsMutationController.handleRunCronJob(inspectSidebarAgent.agentId, jobId)
+                            }
+                            onDeleteCronJob={(jobId) =>
+                              settingsMutationController.handleDeleteCronJob(inspectSidebarAgent.agentId, jobId)
+                            }
+                            controlUiUrl={controlUiUrl}
+                          />
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    <EmptyStatePanel
+                      title="Agent not found."
+                      description="Back to chat and select an available agent."
+                      fillHeight
+                      className="items-center p-6 text-center text-sm"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-4 xl:flex-row">
+              <div className="glass-panel ui-panel p-2 xl:hidden" data-testid="mobile-pane-toggle">
+                <div className="ui-segment grid-cols-2">
+                  <button
+                    type="button"
+                    className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
+                    data-active={mobilePane === "fleet" ? "true" : "false"}
+                    onClick={() => setMobilePane("fleet")}
+                  >
+                    Fleet
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
+                    data-active={mobilePane === "chat" ? "true" : "false"}
+                    onClick={() => setMobilePane("chat")}
+                  >
+                    Chat
+                  </button>
+                </div>
+              </div>
+              <div
+                className={`${mobilePane === "fleet" ? "block" : "hidden"} min-h-0 xl:block xl:min-h-0`}
+              >
+                <FleetSidebar
+                  agents={filteredAgents}
+                  selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
+                  filter={focusFilter}
+                  onFilterChange={handleFocusFilterChange}
+                  onCreateAgent={() => {
+                    handleOpenCreateAgentModal();
+                  }}
+                  createDisabled={status !== "connected" || createAgentBusy || state.loading}
+                  createBusy={createAgentBusy}
+                  onSelectAgent={handleFleetSelectAgent}
+                />
+              </div>
+              <div
+                className={`${mobilePane === "chat" ? "flex" : "hidden"} ui-panel ui-depth-workspace min-h-0 flex-1 overflow-hidden xl:flex`}
+                data-testid="focused-agent-panel"
+              >
+                {focusedAgent ? (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <AgentChatPanel
+                        agent={focusedAgent}
+                        isSelected={false}
+                        canSend={status === "connected"}
+                        models={gatewayModels}
+                        stopBusy={stopBusyAgentId === focusedAgent.agentId}
+                        stopDisabledReason={focusedAgentStopDisabledReason}
+                        onLoadMoreHistory={() => loadMoreAgentHistory(focusedAgent.agentId)}
+                        onOpenSettings={() => handleOpenAgentSettingsRoute(focusedAgent.agentId)}
+                        onRename={(name) =>
+                          settingsMutationController.handleRenameAgent(focusedAgent.agentId, name)
+                        }
+                        onNewSession={() => handleNewSession(focusedAgent.agentId)}
+                        onModelChange={(value) =>
+                          handleModelChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
+                        }
+                        onThinkingChange={(value) =>
+                          handleThinkingChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
+                        }
+                        onToolCallingToggle={(enabled) =>
+                          handleToolCallingToggle(focusedAgent.agentId, enabled)
+                        }
+                        onThinkingTracesToggle={(enabled) =>
+                          handleThinkingTracesToggle(focusedAgent.agentId, enabled)
+                        }
+                        onDraftChange={(value) => handleDraftChange(focusedAgent.agentId, value)}
+                        onSend={(message) =>
+                          handleSend(focusedAgent.agentId, focusedAgent.sessionKey, message)
+                        }
+                        onStopRun={() => handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)}
+                        onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
+                        pendingExecApprovals={focusedPendingExecApprovals}
+                        onResolveExecApproval={(id, decision) => {
+                          void handleResolveExecApproval(id, decision);
+                        }}
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <EmptyStatePanel
-                    title="Agent not found."
-                    description="Back to chat and select an available agent."
+                    title={hasAnyAgents ? "No agents match this filter." : "No agents available."}
+                    description={
+                      hasAnyAgents
+                        ? undefined
+                        : status === "connected"
+                          ? "Use New Agent in the sidebar to add your first agent."
+                          : "Connect to your gateway to load agents into the studio."
+                    }
                     fillHeight
                     className="items-center p-6 text-center text-sm"
                   />
                 )}
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-4 xl:flex-row">
-            <div className="glass-panel ui-panel p-2 xl:hidden" data-testid="mobile-pane-toggle">
-              <div className="ui-segment grid-cols-2">
-                <button
-                  type="button"
-                  className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
-                  data-active={mobilePane === "fleet" ? "true" : "false"}
-                  onClick={() => setMobilePane("fleet")}
-                >
-                  Fleet
-                </button>
-                <button
-                  type="button"
-                  className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
-                  data-active={mobilePane === "chat" ? "true" : "false"}
-                  onClick={() => setMobilePane("chat")}
-                >
-                  Chat
-                </button>
-              </div>
-            </div>
-            <div
-              className={`${mobilePane === "fleet" ? "block" : "hidden"} min-h-0 xl:block xl:min-h-0`}
-            >
-              <FleetSidebar
-                agents={filteredAgents}
-                selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
-                filter={focusFilter}
-                onFilterChange={handleFocusFilterChange}
-                onCreateAgent={() => {
-                  handleOpenCreateAgentModal();
-                }}
-                createDisabled={status !== "connected" || createAgentBusy || state.loading}
-                createBusy={createAgentBusy}
-                onSelectAgent={handleFleetSelectAgent}
-              />
-            </div>
-            <div
-              className={`${mobilePane === "chat" ? "flex" : "hidden"} ui-panel ui-depth-workspace min-h-0 flex-1 overflow-hidden xl:flex`}
-              data-testid="focused-agent-panel"
-            >
-              {focusedAgent ? (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="min-h-0 flex-1">
-                    <AgentChatPanel
-                      agent={focusedAgent}
-                      isSelected={false}
-                      canSend={status === "connected"}
-                      models={gatewayModels}
-                      stopBusy={stopBusyAgentId === focusedAgent.agentId}
-                      stopDisabledReason={focusedAgentStopDisabledReason}
-                      onLoadMoreHistory={() => loadMoreAgentHistory(focusedAgent.agentId)}
-                      onOpenSettings={() => handleOpenAgentSettingsRoute(focusedAgent.agentId)}
-                      onRename={(name) =>
-                        settingsMutationController.handleRenameAgent(focusedAgent.agentId, name)
-                      }
-                      onNewSession={() => handleNewSession(focusedAgent.agentId)}
-                      onModelChange={(value) =>
-                        handleModelChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
-                      }
-                      onThinkingChange={(value) =>
-                        handleThinkingChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
-                      }
-                      onToolCallingToggle={(enabled) =>
-                        handleToolCallingToggle(focusedAgent.agentId, enabled)
-                      }
-                      onThinkingTracesToggle={(enabled) =>
-                        handleThinkingTracesToggle(focusedAgent.agentId, enabled)
-                      }
-                      onDraftChange={(value) => handleDraftChange(focusedAgent.agentId, value)}
-                      onSend={(message) =>
-                        handleSend(focusedAgent.agentId, focusedAgent.sessionKey, message)
-                      }
-                      onStopRun={() => handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)}
-                      onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
-                      pendingExecApprovals={focusedPendingExecApprovals}
-                      onResolveExecApproval={(id, decision) => {
-                        void handleResolveExecApproval(id, decision);
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <EmptyStatePanel
-                  title={hasAnyAgents ? "No agents match this filter." : "No agents available."}
-                  description={
-                    hasAnyAgents
-                      ? undefined
-                      : status === "connected"
-                        ? "Use New Agent in the sidebar to add your first agent."
-                        : "Connect to your gateway to load agents into the studio."
-                  }
-                  fillHeight
-                  className="items-center p-6 text-center text-sm"
-                />
-              )}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       {createAgentModalOpen ? (
         <AgentCreateModal
