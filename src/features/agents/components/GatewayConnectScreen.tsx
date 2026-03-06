@@ -126,6 +126,13 @@ export const GatewayConnectScreen = ({
       selectedScenario,
     ]
   );
+  const studioCliUpdateWarning = useMemo(() => {
+    const studioCli = installContext.studioCli;
+    if (!studioCli.installed || !studioCli.updateAvailable) return null;
+    const current = studioCli.currentVersion?.trim() || "current";
+    const latest = studioCli.latestVersion?.trim() || "latest";
+    return `openclaw-studio CLI ${current} is installed on this host, but ${latest} is available. Run npx -y openclaw-studio@latest to update.`;
+  }, [installContext]);
   const statusCopy = useMemo(() => {
     if (status === "connected") {
       return "Studio is connected to OpenClaw.";
@@ -487,6 +494,12 @@ export const GatewayConnectScreen = ({
           )}
         </div>
       </div>
+
+      {studioCliUpdateWarning ? (
+        <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">
+          {studioCliUpdateWarning}
+        </div>
+      ) : null}
 
       {warnings.length > 0 ? (
         <div className="space-y-2">

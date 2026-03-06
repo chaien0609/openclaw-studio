@@ -20,6 +20,7 @@ export function detectInstallContext(
       env?: NodeJS.ProcessEnv
     ) => { url: string; token: string } | null;
     runCommand?: InstallContextCommandRunner;
+    fetch?: typeof fetch;
   }
 ): Promise<StudioInstallContext>;
 

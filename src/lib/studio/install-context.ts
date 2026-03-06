@@ -19,6 +19,14 @@ export type StudioInstallContext = {
     probeHealthy: boolean;
     issues: string[];
   };
+  studioCli: {
+    installed: boolean;
+    currentVersion: string | null;
+    latestVersion: string | null;
+    updateAvailable: boolean;
+    checkedAt: string | null;
+    checkError: string | null;
+  };
   tailscale: {
     installed: boolean;
     loggedIn: boolean;
@@ -57,6 +65,14 @@ export const defaultStudioInstallContext = (): StudioInstallContext => ({
     sessionsProbeOk: false,
     probeHealthy: false,
     issues: [],
+  },
+  studioCli: {
+    installed: false,
+    currentVersion: null,
+    latestVersion: null,
+    updateAvailable: false,
+    checkedAt: null,
+    checkError: null,
   },
   tailscale: {
     installed: false,

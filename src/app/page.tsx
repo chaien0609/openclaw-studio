@@ -396,6 +396,13 @@ const AgentStudioPage = () => {
     [faviconSeed]
   );
   const errorMessage = state.error ?? gatewayError ?? gatewayModelsError;
+  const studioCliUpdateWarning = useMemo(() => {
+    const studioCli = installContext.studioCli;
+    if (!studioCli.installed || !studioCli.updateAvailable) return null;
+    const current = studioCli.currentVersion?.trim() || "current";
+    const latest = studioCli.latestVersion?.trim() || "latest";
+    return `openclaw-studio CLI ${current} is installed on this host, but ${latest} is available. Run npx -y openclaw-studio@latest to update.`;
+  }, [installContext]);
   const runningAgentCount = useMemo(
     () => agents.filter((agent) => agent.status === "running").length,
     [agents]
@@ -1486,6 +1493,14 @@ const AgentStudioPage = () => {
                   onDisconnect={() => void disconnect()}
                   onClose={() => setShowConnectionPanel(false)}
                 />
+              </div>
+            </div>
+          ) : null}
+
+          {studioCliUpdateWarning ? (
+            <div className="w-full">
+              <div className="ui-alert-danger rounded-md px-4 py-2 text-sm">
+                {studioCliUpdateWarning}
               </div>
             </div>
           ) : null}

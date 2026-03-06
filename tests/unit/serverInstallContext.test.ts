@@ -45,6 +45,8 @@ describe("server install context detector", () => {
     expect(context.localGateway.defaultsDetected).toBe(true);
     expect(context.localGateway.hasToken).toBe(true);
     expect(context.localGateway.probeHealthy).toBe(true);
+    expect(context.studioCli.installed).toBe(false);
+    expect(context.studioCli.updateAvailable).toBe(false);
     expect(context.tailscale.loggedIn).toBe(true);
     expect(context.tailscale.dnsName).toBe("studio-host.tailnet.ts.net");
   });
@@ -72,6 +74,8 @@ describe("server install context detector", () => {
     expect(context.localGateway.cliAvailable).toBe(false);
     expect(context.localGateway.probeHealthy).toBe(false);
     expect(context.localGateway.issues).toContain("cli_not_found");
+    expect(context.studioCli.installed).toBe(false);
+    expect(context.studioCli.updateAvailable).toBe(false);
     expect(context.tailscale.installed).toBe(false);
     expect(context.tailscale.loggedIn).toBe(false);
   });
@@ -99,6 +103,14 @@ describe("server install context detector", () => {
           sessionsProbeOk: true,
           probeHealthy: true,
           issues: [],
+        },
+        studioCli: {
+          installed: false,
+          currentVersion: null,
+          latestVersion: null,
+          updateAvailable: false,
+          checkedAt: null,
+          checkError: null,
         },
         tailscale: {
           installed: false,
